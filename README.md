@@ -18,6 +18,9 @@
 
 ---
 
+UCdLZ0MsYS4hmqFgOYCB6C9w
+connect_ai_lab 유튜버님의 프로젝트를 커스터마이징 하기위해 가져온 페이지.
+
 ## 🌟 Overview: The P-Reinforce Architecture
 
 Connect AI v2.1.30은 단순한 코딩 에이전트를 넘어섭니다. **P-Reinforce 아키텍처**를 기반으로 설계된 이 에이전트는 사용자의 모든 정보와 지시를 받아들여 **스스로 의미를 분석하고, 폴더를 생성하고, 마크다운 위키 파일로 정리하여 클라우드에 자동 백업**하는 자율 지식 정원사(Autonomous Gardener)입니다.
