@@ -240,7 +240,7 @@ function _grepFiles(pattern: string, root: string, fileGlob?: string): { file: s
 
 /* v2.89.154 — 현재 익스텐션 버전. /ping 응답에 포함시켜서 다른 인스턴스가 우리 거인지
    식별 + 옛 버전인지 판단. package.json 의 version 과 동기 유지. */
-const _CONNECT_AI_VERSION = '2.89.156';
+const _CONNECT_AI_VERSION = '2.93.0';
 
 /* v2.89.127 — semver 비교. true 이면 a < b (a 가 옛 버전). */
 function _versionLessThan(a: string, b: string): boolean {
@@ -469,7 +469,7 @@ function ensureBrainGitignore(brainDir: string) {
     const gi = path.join(brainDir, '.gitignore');
     if (fs.existsSync(gi)) return;
     const lines = [
-        '# Connect AI auto-generated',
+        '# Yum Agent Company auto-generated',
         '.DS_Store',
         '.obsidian/',
         '.trash/',
@@ -700,6 +700,8 @@ function _isLMStudioEngine(ollamaBase: string): boolean {
 /* v2.89.66 — _getBrainDir, _isBrainDirExplicitlySet, getCompanyDir, COMPANY_SUBDIR,
    _expandTilde, _resolvePathInput 모두 ./paths.ts 로 이동. 모듈 간 import 일원화. */
 import { _getBrainDir, _isBrainDirExplicitlySet, getCompanyDir, COMPANY_SUBDIR, _expandTilde, _resolvePathInput } from './paths';
+import { evaluateCommandAction, evaluateFileAction, loadPermissionPolicyFromDirs } from './permissionPolicy';
+import { formatValidationReasons, validateAgentFileWrite } from './agentOutputGuard';
 
 async function _ensureBrainDir(): Promise<string | null> {
     if (_isBrainDirExplicitlySet()) {
@@ -839,16 +841,17 @@ const WORLD_LAYOUT = {
   // CEO's private office has a baked-in character at the desk — our CEO
   // stands in the open area of the room (right side, not overlapping).
   agents: {
-    youtube:   { building: 'office', localX: 28, localY: 38 },
-    instagram: { building: 'office', localX: 46, localY: 38 },
-    designer:  { building: 'office', localX: 64, localY: 38 },
-    business:  { building: 'office', localX: 82, localY: 38 },
-    developer: { building: 'office', localX: 28, localY: 58 },
-    secretary: { building: 'office', localX: 82, localY: 58 },
-    ceo:       { building: 'office', localX: 88, localY: 88 },
-    editor:    { building: 'office', localX: 18, localY: 78 },
-    writer:    { building: 'office', localX: 50, localY: 78 },
-    researcher:{ building: 'office', localX: 70, localY: 78 },
+    senior_dev: { building: 'office', localX: 28, localY: 38 },
+    frontend:   { building: 'office', localX: 46, localY: 38 },
+    backend:    { building: 'office', localX: 64, localY: 38 },
+    devops:     { building: 'office', localX: 82, localY: 38 },
+    designer:   { building: 'office', localX: 28, localY: 60 },
+    qa:         { building: 'office', localX: 46, localY: 60 },
+    junior_dev: { building: 'office', localX: 64, localY: 60 },
+    secretary:  { building: 'office', localX: 82, localY: 58 },
+    ceo:        { building: 'office', localX: 88, localY: 88 },
+    writer:     { building: 'office', localX: 50, localY: 78 },
+    researcher: { building: 'office', localX: 70, localY: 78 },
   } as Record<string, AgentDeskRef>,
 
   // Visit-zones for idle wandering / autonomous behavior. Office-only.
@@ -869,14 +872,13 @@ const CUSTOM_MAP_DESKS: Record<string, DeskPos> = {
   // Front desk just outside CEO's office — Secretary station
   secretary:  { x: 18, y: 33 },
   // Top-right twin workstation pairs
-  youtube:    { x: 87, y: 18 },
-  instagram:  { x: 87, y: 32 },
-  // Mid-left small glass meeting pod (used as Designer's focused space)
-  designer:   { x: 13, y: 47 },
-  // Center cubicle cluster (6 desks, agents at 4 of them)
-  developer:  { x: 41, y: 53 },
-  business:   { x: 51, y: 53 },
-  editor:     { x: 41, y: 63 },
+  senior_dev: { x: 87, y: 18 },
+  frontend:   { x: 87, y: 32 },
+  backend:    { x: 75, y: 18 },
+  devops:     { x: 75, y: 32 },
+  designer:   { x: 63, y: 18 },
+  qa:         { x: 63, y: 32 },
+  junior_dev: { x: 51, y: 53 },
   writer:     { x: 51, y: 63 },
   // Bottom-center small admin desks — Researcher
   researcher: { x: 33, y: 82 },
@@ -1104,30 +1106,16 @@ function readCompanyName(): string {
   return _extractCompanyName(_safeReadText(idPath));
 }
 
-/* v2.89.103 — 채용 잠금 시스템. 일부 에이전트(현재: editor=루나)는 기본 잠금
-   상태로 시작하고, 사용자가 PIN(0000)을 입력해야 활성화됨. 이력서·게임적 보상감
-   조성 + 출시 단계 분리(루나는 "입사 준비 중" 컨셉). */
-const LOCKED_AGENTS_DEFAULT: Record<string, boolean> = { editor: true };
+/* v2.90.2 — PIN 잠금 시스템 제거. 모든 에이전트 자유롭게 ON/OFF 토글 가능. */
+const LOCKED_AGENTS_DEFAULT: Record<string, boolean> = {};
 
-/* v2.89.107 — 활성/비활성 토글 시스템 (Option B).
-   Luna(editor) 외에 매일 안 쓰일 가능성 큰 specialist는 기본 비활성으로 시작.
-   사용자가 직원 패널에서 카드 클릭 → 활성화 confirm → 사용 가능.
-   ALWAYS_ON: 핵심 워크플로우용 — 항상 활성, 토글 불가.
-   OPTIONAL: 기본 비활성, 사용자 opt-in 시 활성화 (PIN 안 받음 — Luna만 PIN).
-   기존 사용자 migration: hired.json에 entry 있으면 모든 OPTIONAL 자동 활성화. */
-/* v2.89.110 — 자율성 + 합리적 기본값 균형. 4-tier:
-   1. ALWAYS_ON: 시스템 요구 (off 불가)
-   2. DEFAULT_ON: 첫 진입 시 자동 활성화. 사용자가 언제든 OFF 가능.
-   3. OPTIONAL (DEFAULT_OFF): 기본 비활성, 사용자 opt-in.
-   4. LOCKED (Luna): PIN 필요.
-   v2.89.109가 너무 보수적이어서 (CEO만 ON) 새 사용자가 회사 모드 켜고 "유튜브 분석해줘"
-   하면 빈 plan 나오는 사고. 핵심 4명을 기본 ON으로 되돌려 첫 경험 회복. */
+/* 활성/비활성 토글 시스템.
+   ALWAYS_ON: CEO — 시스템 필수, off 불가.
+   DEFAULT_ON: 첫 진입 시 자동 활성화. 사용자가 언제든 OFF 가능.
+   OPTIONAL: DEFAULT_ON과 동일 범위 — 직원 패널에서 개별 토글 가능. */
 const ALWAYS_ON_AGENTS: Set<string> = new Set(['ceo']);
-/* v2.89.156 — 데모용·신규 사용자 첫 경험 회복. "유튜브 + 매출 종합 보고서" 같은 합성 명령에서
-   현빈(business) 가 비활성이라 조용히 drop 되던 사고 차단. 옵션 전체를 기본 ON 으로. Luna 만 LOCKED 유지.
-   사용자는 언제든 직원 패널에서 개별 OFF 가능. */
-const DEFAULT_ON_AGENTS: Set<string> = new Set(['secretary', 'youtube', 'writer', 'designer', 'instagram', 'business', 'developer', 'researcher']);
-const OPTIONAL_AGENTS_DEFAULT: Set<string> = new Set(['secretary', 'youtube', 'writer', 'designer', 'instagram', 'business', 'developer', 'researcher']);
+const DEFAULT_ON_AGENTS: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev']);
+const OPTIONAL_AGENTS_DEFAULT: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev']);
 
 function _hiredJsonPath(): string {
   return path.join(getCompanyDir(), '_shared', 'hired.json');
@@ -1211,10 +1199,10 @@ function readActiveAgents(): Record<string, { activatedAt: string }> {
     if (!data || typeof data !== 'object') return {};
     /* v2.89.109 — ALWAYS_ON 축소(CEO만)에 따른 2차 마이그레이션. v2.89.107 사용자는
        active.json에 _migrated:true 만 있고 OPTIONAL 4명만 활성화돼있을 수 있음. 그 경우
-       이전엔 ALWAYS_ON 이었던 secretary·youtube·writer·designer 도 자동 활성화 (사용자
+       이전엔 ALWAYS_ON 이었던 secretary·senior_dev·writer·designer 도 자동 활성화 (사용자
        경험 유지). 한 번만 실행: _migrated_v2 플래그로 표시. */
     if (data._migrated && !data._migrated_v2) {
-      const carryOver = ['secretary', 'youtube', 'writer', 'designer'];
+      const carryOver = ['secretary', 'senior_dev', 'writer', 'designer'];
       let touched = false;
       for (const id of carryOver) {
         if (!data[id]) {
@@ -1408,14 +1396,17 @@ function _autoOrchestrateModelMap(installed: { id: string; backend: string }[]):
   const ROLE_PREFERENCES: Record<string, ModelTier[]> = {
     ceo: ['tiny', 'small', 'medium'],         /* 라우팅 결정 — 빠른 게 최우선 */
     secretary: ['small', 'tiny', 'medium'],   /* 일정·대화 — 균형 */
-    youtube: ['large', 'medium', 'small'],    /* 데이터 분석 — 큰 모델 */
+    senior_dev: ['large', 'medium', 'small'],  /* 아키텍처·복잡 구현 — 큰 모델 */
+    backend:    ['large', 'medium', 'small'],   /* API·DB·보안 — 추론 필요 */
+    devops:     ['medium', 'large', 'small'],   /* 파이프라인 설계 */
+    frontend:   ['medium', 'small'],            /* UI 구현 */
+    qa:         ['medium', 'small'],            /* 테스트 전략 */
+    junior_dev: ['small', 'medium'],            /* 단순 반복 — 작은 모델 OK */
     researcher: ['large', 'medium', 'small'], /* 리서치 — 큰 모델 */
-    business: ['medium', 'large', 'small'],   /* KPI·전략 — 추론 */
     writer: ['medium', 'small', 'large'],     /* 창작 — 중간 */
-    editor: ['medium', 'small'],              /* 영상 디렉션 */
     designer: ['vision', 'medium', 'small'],  /* 비전 우선 */
-    developer: ['coder', 'large', 'medium'],  /* 코드 우선 */
-    instagram: ['medium', 'small'],
+    accountant: ['medium', 'small', 'large'], /* 재무·회계 — 숫자/요약 균형 */
+    lawyer: ['medium', 'large', 'small'],     /* 법무·리스크 — 추론 우선 */
   };
   const map: Record<string, string> = {};
   for (const agentId of Object.keys(ROLE_PREFERENCES)) {
@@ -1956,7 +1947,7 @@ function _releaseTelegramLockIfOwned(): void {
   } catch { /* ignore */ }
 }
 
-const TELEGRAM_HELP = `🤖 *Connect AI 봇* — 비서가 24시간 대기 중
+const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대기 중
 
 *그냥 자연어로 말해주세요. 비서가 알아서 처리합니다.*
 
@@ -2029,15 +2020,15 @@ async function classifyToAgent(text: string): Promise<string> {
         if (AGENTS[id]) return id;
     } catch { /* fall through to keyword router */ }
     const lower = text.toLowerCase();
-    if (/유튜브|youtube|영상|채널|구독|썸네일/.test(lower)) return 'youtube';
-    if (/인스타|instagram|릴스|피드|reel/.test(lower)) return 'instagram';
+    if (/react|vue|컴포넌트|프론트|ui|css|tailwind|화면|레이아웃/.test(lower)) return 'frontend';
+    if (/api|서버|db|데이터베이스|백엔드|인증|쿼리|endpoint/.test(lower)) return 'backend';
+    if (/docker|배포|ci|cd|devops|인프라|클라우드|파이프라인/.test(lower)) return 'devops';
+    if (/테스트|버그|qa|e2e|커버리지|playwright|jest/.test(lower)) return 'qa';
+    if (/readme|문서|changelog|주석|가이드/.test(lower)) return 'writer';
+    if (/라이브러리|스택|트렌드|비교|조사/.test(lower)) return 'researcher';
     if (/디자인|design|로고|이미지/.test(lower)) return 'designer';
-    if (/코드|개발|사이트|웹|deploy|배포|api|app/.test(lower)) return 'developer';
-    if (/돈|매출|가격|수익|roi|business|단가/.test(lower)) return 'business';
+    if (/코드|개발|사이트|웹|deploy|app/.test(lower)) return 'senior_dev';
     if (/일정|할일|todo|미팅|알림|메일|brief|브리핑|캘린더/.test(lower)) return 'secretary';
-    if (/편집|자막|b-?roll|컷/.test(lower)) return 'editor';
-    if (/카피|스크립트|블로그|후크|글/.test(lower)) return 'writer';
-    if (/트렌드|리서치|조사|뉴스/.test(lower)) return 'researcher';
     return 'secretary'; // safe default — secretary triages
 }
 
@@ -2280,7 +2271,7 @@ function _buildCapabilityReport(): string {
     /* 1) 비서 본인의 직접 능력 */
     lines.push('*📅 일정 관리*');
     if (calOk) lines.push('  ✅ 추가·조회·수정·취소 (자연어로) — "내일 3시 미팅 잡아줘"');
-    else lines.push('  ⚠️ 미연결 — 명령 팔레트 → "Connect AI: Google Calendar 자동 일정 연결"');
+    else lines.push('  ⚠️ 미연결 — 명령 팔레트 → "Yum Agent: Google Calendar 자동 일정 연결"');
     lines.push('');
     lines.push('*📨 텔레그램 양방향*');
     if (tg.token && tg.chatId) lines.push('  ✅ 작동 중 — 명령 받고 보고 보내기');
@@ -2553,7 +2544,7 @@ async function handleTelegramViaSecretary(userText: string): Promise<void> {
     if (mode === 'calendar_create') {
         const ev = parsed.event;
         if (!isCalendarWriteConnected()) {
-            await sendTelegramReport(`⚠️ Google Calendar가 연결되지 않았어요.\n\n*명령 팔레트* → "Connect AI: Google Calendar 자동 일정 연결" 로 먼저 셋업해주세요.`);
+            await sendTelegramReport(`⚠️ Google Calendar가 연결되지 않았어요.\n\n*명령 팔레트* → "Yum Agent: Google Calendar 자동 일정 연결" 로 먼저 셋업해주세요.`);
             return;
         }
         if (!ev || typeof ev.title !== 'string' || typeof ev.start !== 'string') {
@@ -2772,7 +2763,7 @@ async function handleTelegramViaSecretary(userText: string): Promise<void> {
          days: [1,2,3,4,5], action: 'briefing', enabled: true },
        { id: 'channel-daily', label: '채널 분석', hour: 8, minute: 0,
          days: [0,1,2,3,4,5,6], action: 'tool', tool: 'channel_full_analysis',
-         agentId: 'youtube', enabled: true },
+         agentId: 'senior_dev', enabled: false },
      ] } */
 interface ReportScheduleEntry {
     id: string;
@@ -3461,7 +3452,7 @@ async function _runCalendarOAuthLoopback(
         }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         if (err) {
-          res.end(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect AI — 인증 실패</title>
+          res.end(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yum Agent Company — 인증 실패</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#080a0f;color:#e2e8f0;font-family:'SF Pro Display','Pretendard',-apple-system,system-ui,sans-serif;overflow:hidden}
@@ -3481,7 +3472,7 @@ h1{font-size:22px;font-weight:700;color:#ef4444;margin-bottom:10px;text-shadow:0
 <div class="icon">🔴</div>
 <h1>인증 실패</h1>
 <div class="err">${err}</div>
-<p class="msg">Connect AI로 돌아가서 다시 시도해주세요.</p>
+<p class="msg">Yum Agent Company로 돌아가서 다시 시도해주세요.</p>
 <p class="hint">이 탭은 닫아도 됩니다.</p>
 </div>
 </body></html>`);
@@ -3489,7 +3480,7 @@ h1{font-size:22px;font-weight:700;color:#ef4444;margin-bottom:10px;text-shadow:0
           _resolve({ ok: false, error: err });
           return;
         }
-        res.end(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect AI — 인증 완료</title>
+        res.end(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yum Agent Company — 인증 완료</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#080a0f;color:#e2e8f0;font-family:'SF Pro Display','Pretendard',-apple-system,system-ui,sans-serif;overflow:hidden}
@@ -3523,7 +3514,7 @@ h1{font-size:22px;font-weight:700;color:#00ff41;margin-bottom:10px;text-shadow:0
 <div class="brand">Connect · AI Solopreneur OS</div>
 <div class="ring"><span class="icon">✅</span></div>
 <h1>인증 완료!</h1>
-<p class="msg">Google Calendar가 <strong>Connect AI</strong>에 연결됐어요.<br>이 탭은 자동으로 닫힙니다.</p>
+<p class="msg">Google Calendar가 <strong>Yum Agent Company</strong>에 연결됐어요.<br>이 탭은 자동으로 닫힙니다.</p>
 <p class="countdown" id="cd">3초 후 닫힘</p>
 </div>
 <script>
@@ -4178,7 +4169,7 @@ async function scaffoldDeveloperProject(name: string, template: 'vite-vanilla' |
 <body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center">
   <main class="text-center space-y-4">
     <h1 class="text-4xl font-bold">${safe}</h1>
-    <p class="text-zinc-400">Connect AI · Developer 에이전트가 만든 페이지</p>
+    <p class="text-zinc-400">Yum Agent Company · Dev Team이 만든 페이지</p>
   </main>
 </body>
 </html>
@@ -5075,6 +5066,7 @@ function ensureCompanyStructure(): string {
     fs.mkdirSync(path.join(dir, '_agents', id), { recursive: true });
     _seedAgentGoalIfMissing(id);
     _seedAgentToolsIfMissing(id);
+    _seedBundledAgentToolsIfMissing(id);
     _seedAgentToolsManifestIfMissing(id);
   });
 
@@ -5138,7 +5130,7 @@ ${AGENTS[id].name}의 system prompt에 자동 주입됩니다._
 
 ## 어떻게 채우나요?
 - 텔레그램에서 \`/skill\` (직전 산출물 자동 승격)
-- VS Code 명령 팔레트: \`Connect AI: 방금 산출물 → 스킬로 저장\`
+- VS Code 명령 팔레트: \`Yum Agent: 방금 산출물 → 스킬로 저장\`
 - 직접 이 폴더에 \`<주제>.md\` 파일을 만들어도 됩니다 (\`# 제목\` + 본문)
 
 \`README.md\` 자체는 system prompt에 주입되지 않습니다.
@@ -5159,10 +5151,6 @@ _매 호출 시 시스템 프롬프트에 자동 주입됩니다. (git에 동기
       let presets = '';
       if (id === 'secretary') {
         presets = `\n## 텔레그램 봇\n_BotFather에서 봇을 만들고 토큰을 받으세요. https://t.me/BotFather_\n_그리고 본인 채팅 ID를 알아내려면 https://t.me/userinfobot 에 메시지를 보내세요._\n\n- TELEGRAM_BOT_TOKEN: \n- TELEGRAM_CHAT_ID: \n`;
-      } else if (id === 'youtube') {
-        presets = `\n## YouTube Data API\n- YOUTUBE_API_KEY: \n- YOUTUBE_CHANNEL_ID: \n`;
-      } else if (id === 'instagram') {
-        presets = `\n## Meta Graph API\n- META_ACCESS_TOKEN: \n- INSTAGRAM_BUSINESS_ID: \n`;
       } else if (id === 'designer') {
         presets = `\n## 디자인 도구\n- FIGMA_TOKEN: \n- STITCH_API_KEY: \n`;
       }
@@ -5178,7 +5166,7 @@ ${presets}
   // .gitignore — 시크릿과 캐시 보호
   const giPath = path.join(dir, '.gitignore');
   const desiredGi =
-`# 자동 생성 — Connect AI 1인 기업 모드
+`# 자동 생성 — Yum Agent Company 개발팀 모드
 # 시크릿·API 키 보호
 _agents/*/config.md
 # 도구 설정 JSON 안에 API 키·텔레그램 봇 토큰이 들어갈 수 있어 git에서 제외
@@ -5243,7 +5231,7 @@ _tmp/
 5. 지식 베이스 (\`10_Wiki/\`)
 
 ## 다른 PC로 옮길 때
-1. 새 PC에 Connect AI 설치
+1. 새 PC에 Yum Agent Company 설치
 2. 👔 모드 ON → "📥 다른 PC에서 가져오기" 선택
 3. GitHub URL 입력 → 자동 clone
 4. 끝.
@@ -6101,143 +6089,137 @@ const _GOAL_PREAMBLE = `> 🌞 24시간 업무가 켜져 있으면 이 미션을
 > 자유롭게 수정하세요. 비워두면 회사 공동 목표만 따라갑니다.
 `;
 const DEFAULT_AGENT_GOALS: Record<string, string> = {
-  youtube: `# 🎯 YouTube 에이전트 — 나의 미션
-
-${_GOAL_PREAMBLE}
-## 장기 목표 (3~6개월)
-- 채널 정체성 확립 + 구독자 1만 도달
-- 영상 평균 시청 지속률 50% 이상
-
-## 이번 주 목표
-- 후크 강한 영상 기획서 3개 작성
-- 감시 채널 댓글 패턴에서 후크 단어 5개 추출
-- 경쟁 채널 인기 영상 → 다음 액션 브리프 1건
-
-## 사용 가능한 도구 (Skills)
-- 🔑 \`youtube_account\` — API 키·내 채널·감시 채널·텔레그램 한 번에 설정
-- 🎯 \`trend_sniper\` — 키워드 기반 떡상 영상 패턴 분석
-- 🌙 \`auto_planner\` — 트렌드 스나이퍼 무인 반복 실행
-- 🎬 \`my_videos_check\` — 내 채널 영상이 잘 올라갔는지 자동 판단
-- 💬 \`comment_harvester\` — 감시 채널 댓글 → memory.md 누적
-- 🔭 \`competitor_brief\` — 경쟁 채널 → 지시문 형식 다음 액션
-- 📨 \`telegram_notify\` — 다른 도구 보고를 메신저로 자동 푸시
-
-## 작업 원칙
-- 추상적 조언 대신 **실행 가능한 산출물** (제목·썸네일 브리프·스크립트 후크)
-- 매번 다음 단계 1줄을 명시
-- 메모리(\`memory.md\`)에 누적된 댓글·반응 키워드를 후크에 반영
-`,
-  instagram: `# 📸 Instagram 에이전트 — 나의 미션
-
-${_GOAL_PREAMBLE}
-## 장기 목표 (3~6개월)
-- 피드 톤앤매너 확립 + 팔로워 5천 도달
-- 릴스 평균 도달 1만 이상
-
-## 이번 주 목표
-- 릴스 기획 3개 (훅·보이스오버·자막 포함)
-- 캡션·해시태그 패턴 정리
-
-## 작업 원칙
-- 매 산출물마다 게시 시간 + 후속 스토리 아이디어 1개
-`,
-  designer: `# 🎨 Designer 에이전트 — 나의 미션
-
-${_GOAL_PREAMBLE}
-## 장기 목표 (3~6개월)
-- 브랜드 컬러·타이포·로고 시스템 확정
-- 썸네일/포스트 템플릿 3종 표준화
-
-## 이번 주 목표
-- 디자인 브리프 1건 작성 (레퍼런스 5장 포함)
-- 썸네일 컨셉 3안 비교 정리
-
-## 작업 원칙
-- 텍스트 설명만 X — 색상 코드·폰트명·레이아웃 좌표까지 구체적으로
-`,
-  developer: `# 💻 코다리 — 시니어 풀스택 엔지니어
+  senior_dev: `# 💻 코다리 — 시니어 풀스택 엔지니어
 
 ${_GOAL_PREAMBLE}
 ## 정체성
 - 시니어 엔지니어. 코드 한 줄도 그냥 못 넘어감. "왜?"·"어떻게?"·"이게 깨질 수 있나?" 항상 묻는다.
 - TypeScript·Python·Bash 능숙. React·Next·FastAPI·SQL·Docker 친숙.
-- 클로드 코드처럼 작동: 목표 받으면 → 워크스페이스 탐색 → 계획 → 구현 → 자기 검증.
+- 목표 받으면 → 워크스페이스 탐색 → 계획 → 구현 → 자기 검증.
 
 ## 작업 흐름 (반드시 이 순서)
-1. **탐색 먼저**: 새 파일 만들기 전에 \`<list_files>\`·\`<glob pattern="..."/>\`·\`<grep pattern="..."/>\` 로
-   기존 코드·구조·관습 먼저 파악. 이미 있는 거면 안 새로 쓴다.
-2. **편집 전 read**: \`<edit_file>\` 직전엔 반드시 \`<read_file path="..."/>\` 로 줄번호·현재 내용 확인.
-   v2.89.104부턴 read 결과에 cat -n 줄번호 들어옴 — 이걸 보고 정확한 \`<find>\` 텍스트 잡는다.
-3. **자기 검증 루프**: 코드 만들고/고친 직후 다음 중 1개 실행:
-   - JS/TS: \`<run_command>node --check 파일.js</run_command>\` 또는 \`npx tsc --noEmit\`
-   - Python: \`<run_command>python -m py_compile 파일.py</run_command>\` 또는 단위 테스트
-   - 설정/JSON: \`<run_command>node -e "JSON.parse(require('fs').readFileSync('파일.json','utf8'))"</run_command>
-   실패하면 에러 메시지 보고 자동 수정 (최대 2회 재시도).
+1. **탐색 먼저**: 새 파일 만들기 전에 \`<list_files>\`·\`<glob>\`·\`<grep>\` 로 기존 코드·구조 파악.
+2. **편집 전 read**: \`<edit_file>\` 직전엔 반드시 \`<read_file>\` 로 현재 내용 확인.
+3. **자기 검증 루프**: 코드 작성 후 lint·타입체크·테스트 중 1개 실행. 실패 시 자동 수정.
 4. **결과 시각 확인**: 만든 파일 위치를 \`<reveal_in_explorer>\` 로 보여주기.
 
-## 코딩 원칙 (시니어 스타일)
-- **명명**: 함수·변수가 무엇을 하는지 이름만 봐도 알아야. \`doSomething()\`·\`temp\`·\`data\` 금지.
-- **함수 길이**: 50줄 넘어가면 분리. SRP (단일 책임).
-- **에러 처리**: 외부 입력 (API·파일·사용자)에는 가드. 내부 호출엔 가드 자제 (root cause 가리지 마라).
-- **주석**: 'WHY'만 적고 'WHAT'은 안 적는다. 코드 읽으면 알 수 있는 건 안 적기.
-- **테스트 가능하게**: 사이드 이펙트는 끝에, 순수 로직은 분리.
-- **타입**: TypeScript 엄격. Python은 type hint 권장.
-- **시크릿**: 하드코드 절대 금지. \`process.env.\` 또는 config 파일 + .gitignore.
-- **의존성**: 새 패키지 추가 전에 기존으로 해결 가능한지 본다. lodash 한 함수 쓰자고 lodash 통째 깔지 않는다.
+## 코딩 원칙
+- 명명: 이름만 봐도 역할이 보여야. \`doSomething()\`·\`temp\`·\`data\` 금지.
+- 함수 길이: 50줄 넘으면 분리. SRP.
+- 에러 처리: 외부 입력에만 가드. 내부 호출엔 자제.
+- 주석: 'WHY'만. 'WHAT'은 코드 읽으면 안다.
+- 시크릿: 하드코드 절대 금지. \`process.env.\` 또는 config 파일 + .gitignore.
 
-## Git 워크플로우
-- 의미 단위 커밋. "fix typo" 같은 무의미 메시지 금지.
-- 커밋 메시지: 첫 줄 50자 이내 요약, 본문은 'why' 위주.
-- \`<run_command>git add 특정파일 && git commit -m "..."</run_command>\` — 절대 \`git add -A\` 금지 (시크릿 끌릴 수 있음).
-- 사용자가 명시 요청 안 하면 push 절대 X.
+## 이번 주 목표
+- 복잡한 기능 구현 1건 완료 + 코드 리뷰 2건
+- 성능 병목 1개 진단·개선
 
-## 키트 선택 (pack_apply 자동 매칭)
-사용자가 사이트·앱 만들어달라 하면 자동 흐름:
-1. web_init 으로 프로젝트 셋업
-2. pack_apply 호출 시 **KIT_NAME 비우고 USER_INTENT 에 사용자 명령 그대로** → 시스템이 키워드 매칭으로 자동 선택
-3. 시스템이 매칭 못 하면 fallback (landing-kit)
-
-명시적 선택이 필요할 때만 KIT_NAME 직접 지정:
-- "랜딩"·"홈페이지"·"SaaS"·"출시" → landing-kit
-- "포트폴리오"·"프리랜서"·"자기소개" → portfolio-kit
-- "대시보드"·"관리자"·"admin"·"분석" → dashboard-kit
-- "모바일"·"앱"·"iOS"·"안드로이드" → mobile-kit (Expo)
-
-여러 개 후보면 USER_INTENT 자동 매칭에 맡기는 게 안전. 잘못 골랐다 싶으면 다시 호출해서 KIT_NAME 명시.
-
-## 코드 출력 포맷
-- 작은 변경: \`<edit_file>\` + \`<find>/<replace>\` 정확한 매칭
-- 새 파일: \`<create_file path="...">\` 전체 내용
-- 멀티라인 변경 여러 곳: \`<edit_file>\` 한 블록 안에 \`<find>/<replace>\` 페어 여러 개
-- 코드 설명할 땐 마크다운 \`\`\`lang ... \`\`\` 사용
-
-## 절대 금지
-- "이렇게 하시면 됩니다" 텍스트만 + 코드 없음 → 아무것도 안 한 거.
-- \`<edit_file>\` 전 \`<read_file>\` 안 함 → 매칭 실패의 주범.
-- 커밋 메시지 빈 채로 git commit → reject.
-- 사용자 데이터·API 키를 코드에 그대로 박기.
-- 테스트 안 돌려보고 "수정 완료했습니다" 출력 → 거짓말.
+## 작업 원칙
+- 추상적 설명 대신 **실행 가능한 코드 산출물**
+- 매번 다음 단계 1줄 명시
+- 검증 없이 "완료" 출력 금지
 `,
-  business: `# 💼 현빈 — 비즈니스 전략가 — 나의 미션
+  frontend: `# 🎯 지아 — 프론트엔드 개발자
 
 ${_GOAL_PREAMBLE}
 ## 장기 목표 (3~6개월)
-- 수익화 모델 1개 가설 검증 → 매출화
-- 핵심 KPI 대시보드 운영
+- 재사용 가능한 컴포넌트 라이브러리 구축
+- Core Web Vitals 모두 "Good" 달성
 
 ## 이번 주 목표
-- 가격·번들 옵션 2~3안 비교 메모
-- 경쟁사 3곳 ROI 분석
+- 공통 컴포넌트 3개 구현 (Button·Input·Modal)
+- 반응형 레이아웃 검증 (모바일/태블릿/데스크탑)
 
 ## 작업 원칙
-- 결정 가능한 권고 (A/B 중 어느 쪽인지) + 근거 숫자
+- 컴포넌트 만들 때마다 Props 타입 명시
+- Storybook 스토리 또는 사용 예시 포함
+- 접근성(aria) 빠뜨리지 않기
 `,
-  secretary: `# 🗂️ Secretary 에이전트 — 나의 미션
+  backend: `# ⚙️ 민준 — 백엔드 개발자
+
+${_GOAL_PREAMBLE}
+## 장기 목표 (3~6개월)
+- REST API 완전 문서화 (OpenAPI)
+- DB 인덱스·쿼리 최적화로 응답 시간 50% 단축
+
+## 이번 주 목표
+- API 엔드포인트 3개 구현 + 유닛 테스트
+- 인증 흐름 (JWT refresh) 검증
+
+## 작업 원칙
+- 모든 입력값 검증 (Zod·Pydantic 활용)
+- 환경변수로 비밀값 관리, 하드코드 금지
+- SQL 쿼리 실행계획 확인 후 인덱스 결정
+`,
+  devops: `# 🚀 서준 — DevOps 엔지니어
+
+${_GOAL_PREAMBLE}
+## 장기 목표 (3~6개월)
+- 완전 자동화 배포 파이프라인 구축
+- 모니터링·알림 시스템 운영
+
+## 이번 주 목표
+- GitHub Actions CI 워크플로 작성
+- Docker 이미지 최적화 (레이어 캐시·멀티스테이지)
+
+## 작업 원칙
+- 모든 배포는 자동화. 수동 배포 절대 금지.
+- 롤백 절차 항상 준비
+- 시크릿은 GitHub Secrets 또는 Vault
+`,
+  designer: `# 🎨 Designer — UI/UX 디자이너
+
+${_GOAL_PREAMBLE}
+## 장기 목표 (3~6개월)
+- 디자인 시스템 + 컴포넌트 스펙 문서 완성
+- 접근성 WCAG AA 기준 충족
+
+## 이번 주 목표
+- 핵심 화면 와이어프레임 3개
+- Tailwind 디자인 토큰 정의 (color·spacing·typography)
+
+## 작업 원칙
+- 텍스트 설명만 X — 색상 코드·폰트명·px 수치까지 구체적으로
+- 컴포넌트 스펙: 상태(default·hover·disabled·error) 모두 명시
+`,
+  qa: `# 🧪 유나 — QA 엔지니어
+
+${_GOAL_PREAMBLE}
+## 장기 목표 (3~6개월)
+- 테스트 커버리지 80% 이상 유지
+- E2E 핵심 사용자 플로우 자동화
+
+## 이번 주 목표
+- 신규 기능 테스트 케이스 작성
+- 발견 버그 리포트 3건 이상
+
+## 작업 원칙
+- 버그 리포트: 재현 단계·기대 동작·실제 동작·환경 명시
+- 엣지 케이스(빈 값·최대값·권한 없음) 항상 체크
+- 테스트 코드도 일반 코드처럼 리뷰 대상
+`,
+  writer: `# 📝 Writer — Technical Writer
+
+${_GOAL_PREAMBLE}
+## 장기 목표 (3~6개월)
+- 모든 API 엔드포인트 OpenAPI 문서화
+- 신규 개발자 온보딩 가이드 완성
+
+## 이번 주 목표
+- README 업데이트 (설치·실행·환경변수)
+- CHANGELOG 이번 릴리즈 항목 작성
+
+## 작업 원칙
+- 독자는 "처음 보는 개발자"로 가정
+- 코드 예시는 복사하면 바로 실행 가능하게
+- 모호한 표현("적절히"·"알맞게") 금지
+`,
+  secretary: `# 🗂️ 영숙 — 비서
 
 ${_GOAL_PREAMBLE}
 ## 장기 목표 (3~6개월)
 - 데일리 브리핑·할 일 정리 루틴 자동화
-- 다른 에이전트 산출물을 한 줄 요약으로 모아서 보고
+- 팀 에이전트 산출물을 한 줄 요약으로 모아서 보고
 
 ## 이번 주 목표
 - 매일 09:00 데일리 브리핑 정리
@@ -6246,48 +6228,36 @@ ${_GOAL_PREAMBLE}
 ## 작업 원칙
 - "정리"보다 "다음 액션 1개" 명시가 우선
 `,
-  editor: `# 🎵 루나 — 사운드 감독 — 나의 미션
+  researcher: `# 🔍 Researcher — Tech Researcher
 
 ${_GOAL_PREAMBLE}
 ## 장기 목표 (3~6개월)
-- 영상 톤별 BGM 라이브러리 구축 (cinematic·lo-fi·ambient·edm 등)
-- 채널 시그니처 사운드 (오프닝/엔딩 BGM) 정착
+- 주요 기술 스택 비교 문서 라이브러리 구축
+- 보안 취약점 주간 모니터링 루틴
 
 ## 이번 주 목표
-- 최근 영상 1편에 어울리는 BGM 1곡 자동 생성 + 합성
-- 다음 영상 5편의 무드 키워드(장르/BPM/분위기) 미리 잡아두기
+- 현재 프로젝트 의존성 라이브러리 버전 감사
+- 대안 라이브러리 비교 1건
 
 ## 작업 원칙
-- 막연한 "신나는 곡" X — 장르·BPM·길이 명시
-- 영상 길이에 맞춰 BGM loop/fade 자동 결정
+- 결론 먼저, 근거 뒤에
+- 출처·버전·날짜 명시 (오래된 정보는 표시)
 `,
-  writer: `# ✍️ Writer 에이전트 — 나의 미션
+  junior_dev: `# 🌱 연아 — 주니어 개발자
 
 ${_GOAL_PREAMBLE}
 ## 장기 목표 (3~6개월)
-- 후크·CTA 라이브러리 50개 운영
-- 채널·인스타·블로그 톤앤매너 가이드 확정
+- 반복 코드 자동화 스크립트 3개 작성
+- 코드 품질: lint 에러 0건 유지
 
 ## 이번 주 목표
-- 영상 스크립트 초안 2편 (후크 3안 포함)
-- 인스타 캡션 5개 + 블로그 글 1편
+- 보일러플레이트 파일 생성 자동화
+- 코드 포맷팅·린트 적용
 
 ## 작업 원칙
-- 한 산출물에 후크/본문/CTA를 명확히 분리
-`,
-  researcher: `# 🔍 Researcher 에이전트 — 나의 미션
-
-${_GOAL_PREAMBLE}
-## 장기 목표 (3~6개월)
-- 산업·경쟁사 트렌드 리포트 월 1회 발행
-- 인용 가능한 1차 자료 라이브러리 구축
-
-## 이번 주 목표
-- 우리 분야 트렌드 5개 짧은 메모
-- 경쟁사 2곳 최근 활동·성공 콘텐츠 정리
-
-## 작업 원칙
-- 출처 링크 필수, 의견과 사실 분리해서 표기
+- 모르는 부분은 시니어에게 먼저 물어보기
+- 작은 단위로 PR 올리기
+- 커밋 메시지 의미 있게 쓰기
 `,
 };
 
@@ -6714,6 +6684,32 @@ function _seedAgentToolsIfMissing(agentId: string) {
 }
 
 /* v2.89.121 — 비즈니스 에이전트 도구 시드. PayPal Developer API 직결. */
+function _seedBundledAgentToolsIfMissing(agentId: string) {
+  try {
+    const srcDir = path.join(_TOOL_SEEDS_DIR, agentId);
+    if (!fs.existsSync(srcDir)) return;
+
+    const toolsDir = path.join(getCompanyDir(), '_agents', agentId, 'tools');
+    fs.mkdirSync(toolsDir, { recursive: true });
+
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (!/\.(py|md|json)$/i.test(entry.name)) continue;
+
+      const src = path.join(srcDir, entry.name);
+      const dst = path.join(toolsDir, entry.name);
+
+      if (!fs.existsSync(dst)) {
+        fs.copyFileSync(src, dst);
+      } else if (entry.name.toLowerCase().endsWith('.json')) {
+        try {
+          _mergeSchemaIntoJson(dst, fs.readFileSync(src, 'utf-8'));
+        } catch { /* keep existing user config */ }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 function _seedBusinessPaypalRevenue(toolsDir: string) {
   const py = _loadToolSeed('business/paypal_revenue.py');
   const md = _loadToolSeed('business/paypal_revenue.md');
@@ -8342,6 +8338,12 @@ export function activate(context: vscode.ExtensionContext) {
                         fs.mkdirSync(toolsDir, { recursive: true });
                         // 3) 파일 쓰기 — script (필수), config·readme (선택)
                         const scriptPath = path.join(toolsDir, `${safeName}.py`);
+                        const scriptValidation = validateAgentFileWrite(scriptPath, script);
+                        if (!scriptValidation.ok) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: `script validation failed: ${formatValidationReasons(scriptValidation)}` }));
+                            return;
+                        }
                         fs.writeFileSync(scriptPath, script, 'utf-8');
                         // 주입 출처 표시 — _injectedAt이 있으면 "내가 주입한 스킬"로
                         // UI에서 ✨ 배지 표시. 사용자가 만든 게 아니라 EZER/AI Univ
@@ -8445,6 +8447,8 @@ export function activate(context: vscode.ExtensionContext) {
                             if (!safeFn) continue;
                             const filePath = path.join(filesDir, safeFn);
                             if (!filePath.startsWith(path.resolve(filesDir) + path.sep)) continue;
+                            const validation = validateAgentFileWrite(filePath, content);
+                            if (!validation.ok) continue;
                             fs.writeFileSync(filePath, content, 'utf-8');
                             writtenCount++;
                         }
@@ -12851,8 +12855,14 @@ class OfficePanel {
                 }
             }
         }
-        // 번들 자산 (vsix에 포함, 모든 사용자에게 동작)
-        const bundled = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${agentId}.png`);
+        // 번들 자산 (vsix에 포함, 모든 사용자에게 동작).
+        // 새 직원용 sprite가 아직 없으면 기존 역할과 가까운 아바타를 재사용한다.
+        const spriteAlias: Record<string, string> = {
+            accountant: 'business',
+            lawyer: 'devops',
+        };
+        const spriteId = spriteAlias[agentId] || agentId;
+        const bundled = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${spriteId}.png`);
         if (fs.existsSync(bundled.fsPath)) {
             return { uri: this._panel.webview.asWebviewUri(bundled).toString(), source: 'bundled' };
         }
@@ -16897,7 +16907,7 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                         const isDefault = model === (getConfig().defaultModel || '');
                         const map: Record<string, string> = {};
                         if (!isDefault) {
-                            for (const id of SPECIALIST_IDS) map[id] = model;
+                            for (const id of AGENT_ORDER) map[id] = model;
                         }
                         writeAgentModelMap(map);
                         webviewView.webview.postMessage({ type: 'agentDockSaved', ok: true, all: true, model });
@@ -16952,20 +16962,23 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                     /* 글로벌 "내 스킬 라이브러리" 데이터 — 모든 에이전트의 tools를
                        한 번에 묶어서 webview로 전달. 에이전트별로 그룹핑 + Mine 표시. */
                     try {
-                        const groups = AGENT_ORDER.map(id => ({
-                            agentId: id,
-                            agentName: AGENTS[id]?.name || id,
-                            agentEmoji: AGENTS[id]?.emoji || '🛠',
-                            agentColor: AGENTS[id]?.color || '#5DE0E6',
-                            agentRole: AGENTS[id]?.role || '',
-                            tools: listAgentTools(id).map(t => ({
-                                name: t.name,
-                                displayName: t.displayName,
-                                description: t.description,
-                                injectedAt: t.injectedAt || null,
-                                injectedFrom: t.injectedFrom || null,
-                            })),
-                        }));
+                        const groups = AGENT_ORDER.map(id => {
+                            _seedBundledAgentToolsIfMissing(id);
+                            return {
+                                agentId: id,
+                                agentName: AGENTS[id]?.name || id,
+                                agentEmoji: AGENTS[id]?.emoji || '🛠',
+                                agentColor: AGENTS[id]?.color || '#5DE0E6',
+                                agentRole: AGENTS[id]?.role || '',
+                                tools: listAgentTools(id).map(t => ({
+                                    name: t.name,
+                                    displayName: t.displayName,
+                                    description: t.description,
+                                    injectedAt: t.injectedAt || null,
+                                    injectedFrom: t.injectedFrom || null,
+                                })),
+                            };
+                        });
                         webviewView.webview.postMessage({ type: 'allSkillsLoaded', groups });
                     } catch (e: any) {
                         webviewView.webview.postMessage({ type: 'allSkillsLoaded', groups: [], error: String(e?.message || e) });
@@ -17359,8 +17372,14 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                                 type: 'corporateReady',
                                 agents: AGENT_ORDER.map(id => {
                                     // Prefer high-res custom portrait if declared and the file exists,
-                                    // else fall back to the bundled pixel sprite.
+                                    // else fall back to the bundled pixel sprite. Some newer employees
+                                    // intentionally reuse an existing avatar until dedicated art exists.
                                     const customName = AGENTS[id].profileImage;
+                                    const spriteAlias: Record<string, string> = {
+                                        accountant: 'business',
+                                        lawyer: 'devops',
+                                    };
+                                    const spriteId = spriteAlias[id] || id;
                                     let portraitUri: vscode.Uri;
                                     if (customName) {
                                         const customPath = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'agents', customName);
@@ -17368,13 +17387,13 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                                             if (fs.existsSync(customPath.fsPath)) {
                                                 portraitUri = customPath;
                                             } else {
-                                                portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${id}.png`);
+                                                portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${spriteId}.png`);
                                             }
                                         } catch {
-                                            portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${id}.png`);
+                                            portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${spriteId}.png`);
                                         }
                                     } else {
-                                        portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${id}.png`);
+                                        portraitUri = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${spriteId}.png`);
                                     }
                                     return {
                                         id,
@@ -20131,6 +20150,25 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                         const cwd = path.join(getCompanyDir(), '_agents', t.agent, 'tools');
                         const execLogs: string[] = [];
                         for (const cmd of cmds) {
+                            const brainDir = (() => {
+                                try { return _getBrainDir(); } catch { return ''; }
+                            })();
+                            const companyDir = getCompanyDir();
+                            const policy = loadPermissionPolicyFromDirs([cwd, companyDir, brainDir]);
+                            const decision = evaluateCommandAction({
+                                command: cmd,
+                                cwd,
+                                rootPath: companyDir,
+                                brainDir,
+                                agentId: t.agent,
+                                policy,
+                            });
+                            if (!decision.allowed) {
+                                const reason = decision.reason || '권한정책에 의해 차단되었습니다.';
+                                execLogs.push(`### ❌ 명령 차단: \`${cmd.slice(0, 100)}\`\n${reason}`);
+                                post({ type: 'response', value: `❌ ${a.emoji} ${a.name} 명령 차단: ${reason}` });
+                                continue;
+                            }
                             try {
                                 /* v2.89.73 — 실시간 진행상황 streaming. 이전엔 명령 끝난 후에야 출력 보였음
                                    (5~15분 음악 모델 설치 시 사용자가 "뭐가 되고 있나?" 답답). 이제 stdout/
@@ -21161,6 +21199,39 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             }
             return report;
         }
+        const brainDirForPolicy = (() => {
+            try { return _getBrainDir(); } catch { return ''; }
+        })();
+        const companyDirForPolicy = (() => {
+            try { return getCompanyDir(); } catch { return ''; }
+        })();
+        const permissionPolicy = loadPermissionPolicyFromDirs([
+            rootPath,
+            companyDirForPolicy,
+            brainDirForPolicy,
+        ]);
+        const checkFilePermission = (action: 'create' | 'edit' | 'delete' | 'read' | 'list' | 'open', absPath: string): string | null => {
+            const decision = evaluateFileAction({
+                action,
+                absPath,
+                rootPath: rootPath!,
+                brainDir: brainDirForPolicy,
+                agentId: opts?.agentId,
+                policy: permissionPolicy,
+            });
+            return decision.allowed ? null : (decision.reason || '권한정책에 의해 차단되었습니다.');
+        };
+        const checkCommandPermission = (cmd: string, cwd: string): string | null => {
+            const decision = evaluateCommandAction({
+                command: cmd,
+                cwd,
+                rootPath: rootPath!,
+                brainDir: brainDirForPolicy,
+                agentId: opts?.agentId,
+                policy: permissionPolicy,
+            });
+            return decision.allowed ? null : (decision.reason || '권한정책에 의해 차단되었습니다.');
+        };
         if (usedFallbackRoot) {
             report.push(`📁 워크스페이스 미오픈 — \`${rootPath.replace(os.homedir(), '~')}\` 를 root로 사용합니다.`);
         }
@@ -21199,6 +21270,16 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 continue;
             }
             const absPath = resolved.abs;
+            const denied = checkFilePermission('create', absPath);
+            const validation = validateAgentFileWrite(absPath, content);
+            if (denied) {
+                report.push(`❌ 생성 차단: ${relPath} — ${denied}`);
+                continue;
+            }
+            if (!validation.ok) {
+                report.push(`Agent write blocked: ${relPath} -> ${formatValidationReasons(validation)}`);
+                continue;
+            }
             try {
                 const dir = path.dirname(absPath);
                 if (!fs.existsSync(dir)) {
@@ -21236,6 +21317,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 continue;
             }
             const absPath = resolved.abs;
+            const denied = checkFilePermission('edit', absPath);
+            if (denied) {
+                report.push(`❌ 편집 차단: ${relPath} — ${denied}`);
+                continue;
+            }
 
             try {
                 let fileContent = fs.readFileSync(absPath, 'utf-8');
@@ -21292,6 +21378,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 }
 
                 if (editCount > 0) {
+                    const validation = validateAgentFileWrite(absPath, fileContent);
+                    if (!validation.ok) {
+                        report.push(`Agent edit blocked: ${relPath} -> ${formatValidationReasons(validation)}`);
+                        continue;
+                    }
                     fs.writeFileSync(absPath, fileContent, 'utf-8');
                     if (absPath.startsWith(_getBrainDir())) brainModified = true;
                     /* v2.89.104 — Claude 익스텐션 호환 unified diff 표시. 변경된 hunk만,
@@ -21337,6 +21428,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 continue;
             }
             const absPath = resolved.abs;
+            const denied = checkFilePermission('delete', absPath);
+            if (denied) {
+                report.push(`❌ 삭제 차단: ${relPath} — ${denied}`);
+                continue;
+            }
             /* 안전장치: 사용자 홈 자체나 루트 직접 삭제 차단 */
             if (absPath === os.homedir() || absPath === '/' || /^[A-Z]:\\?$/i.test(absPath)) {
                 report.push(`❌ 삭제 차단: ${absPath} — 홈/루트 디렉토리 직접 삭제 금지.`);
@@ -21377,6 +21473,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 continue;
             }
             const absPath = resolved.abs;
+            const denied = checkFilePermission('read', absPath);
+            if (denied) {
+                report.push(`❌ 읽기 차단: ${relPath} — ${denied}`);
+                continue;
+            }
             try {
                 if (fs.existsSync(absPath)) {
                     const stat = fs.statSync(absPath);
@@ -21444,6 +21545,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 continue;
             }
             const absDir = resolved.abs;
+            const denied = checkFilePermission('list', absDir);
+            if (denied) {
+                report.push(`❌ 목록 차단: ${relDir} — ${denied}`);
+                continue;
+            }
             try {
                 if (fs.existsSync(absDir) && fs.statSync(absDir).isDirectory()) {
                     const entries = fs.readdirSync(absDir, { withFileTypes: true });
@@ -21481,6 +21587,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 report.push(`❌ glob 차단: ${pattern} — ${resolved?.reason || '경로 해석 불가'}`);
                 continue;
             }
+            const denied = checkFilePermission('list', resolved.abs);
+            if (denied) {
+                report.push(`❌ glob 차단: ${pattern} — ${denied}`);
+                continue;
+            }
             try {
                 const hits = _globMatch(pattern, resolved.abs, 200);
                 const summary = hits.length === 0 ? '_(매칭 없음)_'
@@ -21504,6 +21615,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             const resolved = _resolveFlexiblePath(relRoot, rootPath);
             if (!resolved || resolved.reason) {
                 report.push(`❌ grep 차단: ${pattern} — ${resolved?.reason || '경로 해석 불가'}`);
+                continue;
+            }
+            const denied = checkFilePermission('read', resolved.abs);
+            if (denied) {
+                report.push(`❌ grep 차단: ${pattern} — ${denied}`);
                 continue;
             }
             try {
@@ -21534,6 +21650,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             const relPath = match[1].trim();
             const resolved = _resolveFlexiblePath(relPath, rootPath);
             if (!resolved) { report.push(`❌ 익스플로러 열기 실패: ${relPath} — 경로 해석 불가.`); continue; }
+            const denied = checkFilePermission('open', resolved.abs);
+            if (denied) {
+                report.push(`❌ 익스플로러 열기 차단: ${relPath} — ${denied}`);
+                continue;
+            }
             const r = _revealInOsExplorer(resolved.abs);
             report.push((r.ok ? '🗂 ' : '❌ ') + r.message.replace(os.homedir(), '~'));
         }
@@ -21544,6 +21665,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             const relPath = match[1].trim();
             const resolved = _resolveFlexiblePath(relPath, rootPath);
             if (!resolved) { report.push(`❌ 파일 열기 실패: ${relPath} — 경로 해석 불가.`); continue; }
+            const denied = checkFilePermission('open', resolved.abs);
+            if (denied) {
+                report.push(`❌ 파일 열기 차단: ${relPath} — ${denied}`);
+                continue;
+            }
             const r = _openInDefaultApp(resolved.abs);
             report.push((r.ok ? '🚀 ' : '❌ ') + r.message.replace(os.homedir(), '~'));
         }
@@ -21565,6 +21691,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 cmd = lines.join('\n').trim();
             }
             if (!cmd) continue;
+            const denied = checkCommandPermission(cmd, rootPath);
+            if (denied) {
+                report.push(`❌ 명령 차단: \`${cmd.slice(0, 120)}\` — ${denied}`);
+                continue;
+            }
 
             // Live-stream the output to the chat so the user sees progress in real time
             // (corporate 모드는 카드 뷰에서 별도 처리 — opts.appendToOutput 만 채움)
@@ -21651,6 +21782,11 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                     const absPath = safeResolveInside(rootPath, relPath);
                     if (!absPath) {
                         report.push(`❌ 생성 차단: ${relPath} — 워크스페이스 밖으로 나가는 경로입니다.`);
+                        continue;
+                    }
+                    const validation = validateAgentFileWrite(absPath, content);
+                    if (!validation.ok) {
+                        report.push(`Agent write blocked: ${relPath} -> ${formatValidationReasons(validation)}`);
                         continue;
                     }
                     try {
