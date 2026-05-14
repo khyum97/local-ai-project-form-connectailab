@@ -2,7 +2,7 @@
 
 Personal local AI development company for VS Code/Cursor. It runs a small team of local AI employees that can plan, write files, use tools, keep memory, and move work toward real deliverables.
 
-Current version: `2.96.0`
+Current version: `2.97.0`
 
 ## What It Is
 
@@ -103,6 +103,7 @@ Use this when you want the company to behave more like a production line.
 /factory pause
 /factory stop
 /factory tick
+/factory review
 /factory add <ticket title>
 ```
 
@@ -113,6 +114,7 @@ Examples:
 /factory add Add README install guide and screenshots section
 /factory on
 /factory tick
+/factory review
 /factory status
 /factory pause
 ```
@@ -136,7 +138,7 @@ Ticket flow target:
 backlog -> doing -> review -> shipped
 ```
 
-The MVP stores the queue, injects factory status into agent prompts, and `/factory tick` runs one ticket through the CEO dispatch path. A successful run moves the ticket to `review` and records evidence pointing at the saved session manifest.
+The MVP stores the queue, injects factory status into agent prompts, and `/factory tick` runs one ticket through the CEO dispatch path. A successful run moves the ticket to `review` and records evidence pointing at the saved session manifest. `/factory review` checks review tickets: evidence present means `shipped`; missing evidence means `blocked`.
 
 ### Existing Work Commands
 
@@ -271,8 +273,8 @@ Project Workspace Manager is now started:
 
 Next build target:
 
-- `/factory review`: QA/senior_dev gate moves `review` tickets to `shipped` or `blocked`
 - `/factory auto`: timed heartbeat calls `/factory tick` while factory is running
+- LLM QA review: QA/senior_dev reads the manifest and final report before shipping
 - CEO decomposes vague work into 3-7 small tickets when backlog is empty
 - shipped tickets update project release notes
 

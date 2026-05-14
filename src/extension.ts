@@ -1977,7 +1977,7 @@ const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대�
 \`/caveman on|off\` — terse 응답 모드 토글
 \`/superpowers on|off\` — 계획·디버깅·검증 워크플로우 토글
 \`/project status|list|create|switch|pause|archive\` — 프로젝트 전환/중지/보관
-\`/factory status|on|pause|stop|tick|add\` — 작업 공장 큐 상태/가동/정지/한 스텝 실행/티켓 추가
+\`/factory status|on|pause|stop|tick|review|add\` — 작업 공장 큐 상태/가동/정지/한 스텝 실행/검수/티켓 추가
 \`/help\` — 이 도움말`;
 
 const AUTONOMY_LABELS: Record<number, string> = {
@@ -5249,6 +5249,7 @@ interface FactoryTicket {
   project?: string;
   evidence?: string;
   sessionDir?: string;
+  review?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -5533,6 +5534,52 @@ function completeFactoryTicketFromPrompt(prompt: string, sessionDir: string, fin
   } catch { /* never break dispatch completion */ }
 }
 
+function _resolveFactoryEvidencePath(ticket: FactoryTicket): string {
+  if (ticket.sessionDir && path.isAbsolute(ticket.sessionDir)) {
+    const manifest = path.join(ticket.sessionDir, '_manifest.json');
+    if (fs.existsSync(manifest)) return manifest;
+  }
+  if (ticket.evidence) {
+    const direct = path.isAbsolute(ticket.evidence) ? ticket.evidence : path.join(getCompanyDir(), ticket.evidence);
+    if (fs.existsSync(direct)) return direct;
+    const sessionDirect = path.join(getCompanyDir(), ticket.evidence.replace(/^sessions[\\/]/, 'sessions/'));
+    if (fs.existsSync(sessionDirect)) return sessionDirect;
+  }
+  return '';
+}
+
+function reviewFactoryTickets(): string {
+  seedFactoryIfMissing();
+  seedProjectWorkspaceIfMissing();
+  const backlog = _readFactoryBacklog();
+  const reviewTickets = backlog.tickets.filter(t => t.status === 'review');
+  if (reviewTickets.length === 0) return `Factory review: review 티켓 없음\n\n${_factoryStatusText()}`;
+  const lines: string[] = [];
+  for (const ticket of reviewTickets) {
+    const evidencePath = _resolveFactoryEvidencePath(ticket);
+    const now = new Date().toISOString();
+    if (evidencePath) {
+      ticket.status = 'shipped';
+      ticket.review = `shipped: evidence found at ${evidencePath}`;
+      ticket.updatedAt = now;
+      lines.push(`SHIPPED ${ticket.id.slice(-8)} ${ticket.title}`);
+      const projectSlug = ticket.project || _readProjectIndex().active;
+      if (projectSlug) {
+        const releasePath = path.join(_projectDir(projectSlug), 'release-notes.md');
+        fs.mkdirSync(path.dirname(releasePath), { recursive: true });
+        fs.appendFileSync(releasePath, `\n## ${now.slice(0, 10)} — ${ticket.title}\n- ticket: ${ticket.id}\n- evidence: ${ticket.evidence || evidencePath}\n- status: shipped\n`);
+      }
+    } else {
+      ticket.status = 'blocked';
+      ticket.review = 'blocked: evidence manifest missing. Run /factory tick again or inspect session output.';
+      ticket.updatedAt = now;
+      lines.push(`BLOCKED ${ticket.id.slice(-8)} ${ticket.title} — evidence missing`);
+    }
+  }
+  _writeFactoryBacklog(backlog);
+  return `Factory review complete\n\n${lines.join('\n')}\n\n${_factoryStatusText()}`;
+}
+
 function handleFactoryCommand(text: string): string | null {
   const trimmed = text.trim();
   const m = trimmed.match(/^\/factory(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
@@ -5542,6 +5589,7 @@ function handleFactoryCommand(text: string): string | null {
   const action = (m[1] || 'status').toLowerCase();
   const arg = (m[2] || '').trim();
   if (action === 'status') return _factoryStatusText();
+  if (action === 'review') return reviewFactoryTickets();
   if (action === 'tick') return startFactoryTick().message;
   if (action === 'on' || action === 'start' || action === 'run') {
     _writeFactoryState({ enabled: true, status: 'running', updatedAt: new Date().toISOString() });
@@ -5580,7 +5628,7 @@ function handleFactoryCommand(text: string): string | null {
     _writeFactoryBacklog(backlog);
     return `Factory ticket added: ${id}\n${arg}`;
   }
-  return '사용: /factory status | on | pause | stop | tick | add <ticket title>';
+  return '사용: /factory status | on | pause | stop | tick | review | add <ticket title>';
 }
 
 function handleOpsCommand(text: string): string | null {
