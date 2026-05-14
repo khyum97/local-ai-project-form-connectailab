@@ -1973,6 +1973,9 @@ const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대�
 \`/cancel <id>\` — 작업 취소
 \`/skill\` — 직전 산출물을 패턴(스킬)으로 저장 (다음 호출부터 자동 참조)
 \`/skills [에이전트id]\` — 저장된 스킬 목록 보기
+\`/skillpacks\` — Caveman/Superpowers 적용 상태 보기
+\`/caveman on|off\` — terse 응답 모드 토글
+\`/superpowers on|off\` — 계획·디버깅·검증 워크플로우 토글
 \`/help\` — 이 도움말`;
 
 const AUTONOMY_LABELS: Record<number, string> = {
@@ -2039,6 +2042,11 @@ async function handleTelegramCommand(text: string): Promise<void> {
 
     if (cmd === '/help' || cmd === '/start') {
         await sendTelegramReport(TELEGRAM_HELP);
+        return;
+    }
+    const skillPackResult = handleSkillPackSlashCommand(trimmed);
+    if (skillPackResult) {
+        await sendTelegramReport(skillPackResult);
         return;
     }
     /* Plan B (2026-05-03 단순화) — 슬래시 명령은 4개만 유지:
@@ -5055,6 +5063,150 @@ function _safeReadText(p: string): string {
   try { return fs.readFileSync(p, 'utf-8'); } catch { return ''; }
 }
 
+type BuiltinSkillPackId = 'caveman' | 'superpowers';
+
+const BUILTIN_SKILL_PACKS: Record<BuiltinSkillPackId, { title: string; summary: string; body: string }> = {
+  caveman: {
+    title: 'Caveman Mode',
+    summary: 'Token-saving terse communication mode.',
+    body: `# Caveman Mode
+
+## Purpose
+Use terse, high-signal language while preserving technical accuracy.
+
+## Rules
+- Drop filler, pleasantries, hedging, and repeated explanation.
+- Keep exact code symbols, command names, file paths, errors, and API names.
+- Prefer short fragments when clarity remains.
+- Pattern: \`[thing] [action] [reason]. [next step].\`
+- Resume normal clarity for security warnings, irreversible actions, and ambiguous multi-step instructions.
+
+## Levels
+- lite: concise professional prose.
+- full: fragments OK, filler removed.
+- ultra: abbreviate prose aggressively, keep technical identifiers exact.
+
+## Trigger
+When enabled, answer in caveman-full style unless the user asks for normal mode.
+`
+  },
+  superpowers: {
+    title: 'Superpowers Workflow',
+    summary: 'Structured planning, debugging, review, and verification workflow.',
+    body: `# Superpowers Workflow
+
+## Purpose
+Use reliable engineering workflows instead of jumping straight to guesses.
+
+## Core Protocols
+- Brainstorm before feature design: clarify goal, constraints, and success criteria.
+- Write an implementation plan for multi-step work.
+- Debug systematically: reproduce, inspect recent changes, find root cause, then fix.
+- Verify before completion: run the exact command that proves the claim.
+- Request/review code changes with bug and regression risk first.
+
+## Agent Behavior
+- For new features, propose a small design before large edits.
+- For bugs, identify root cause before patching.
+- Before reporting done, run compile/tests or state why not possible.
+- Keep work scoped to the user's request and existing project patterns.
+`
+  }
+};
+
+function _skillPacksDir(): string {
+  return path.join(getCompanyDir(), '_skillpacks');
+}
+
+function _skillPackStatePath(): string {
+  return path.join(_skillPacksDir(), 'enabled.json');
+}
+
+function _readSkillPackState(): Record<string, boolean> {
+  try {
+    const raw = _safeReadText(_skillPackStatePath()).trim();
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+}
+
+function _writeSkillPackState(state: Record<string, boolean>) {
+  const dir = _skillPacksDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(_skillPackStatePath(), JSON.stringify(state, null, 2));
+}
+
+function seedBuiltinSkillPacksIfMissing() {
+  try {
+    const dir = _skillPacksDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const statePath = _skillPackStatePath();
+    if (!fs.existsSync(statePath)) {
+      fs.writeFileSync(statePath, JSON.stringify({ caveman: false, superpowers: false }, null, 2));
+    }
+    for (const [id, pack] of Object.entries(BUILTIN_SKILL_PACKS)) {
+      const packDir = path.join(dir, id);
+      fs.mkdirSync(packDir, { recursive: true });
+      const skillPath = path.join(packDir, 'SKILL.md');
+      if (!fs.existsSync(skillPath)) fs.writeFileSync(skillPath, pack.body);
+      const readmePath = path.join(packDir, 'README.md');
+      if (!fs.existsSync(readmePath)) {
+        fs.writeFileSync(readmePath, `# ${pack.title}\n\n${pack.summary}\n\nToggle with \`/${id} on\` or \`/${id} off\`.\n`);
+      }
+    }
+  } catch { /* never block company startup */ }
+}
+
+function readEnabledSkillPacks(maxChars = 5000): string {
+  const state = _readSkillPackState();
+  const blocks: string[] = [];
+  let used = 0;
+  for (const id of Object.keys(BUILTIN_SKILL_PACKS) as BuiltinSkillPackId[]) {
+    if (!state[id]) continue;
+    const pack = BUILTIN_SKILL_PACKS[id];
+    const body = (_safeReadText(path.join(_skillPacksDir(), id, 'SKILL.md')).trim() || pack.body).trim();
+    if (!body) continue;
+    const room = Math.max(0, maxChars - used);
+    if (room <= 0) break;
+    const block = `## ${pack.title}\n${body.slice(0, room)}`;
+    blocks.push(block);
+    used += block.length;
+  }
+  if (blocks.length === 0) return '';
+  return `\n\n[활성 Skill Pack — 모든 에이전트가 따라야 하는 작업 방식]\n${blocks.join('\n\n---\n\n')}`;
+}
+
+function formatSkillPackStatus(): string {
+  const state = _readSkillPackState();
+  return (Object.keys(BUILTIN_SKILL_PACKS) as BuiltinSkillPackId[])
+    .map(id => `${state[id] ? 'ON ' : 'OFF'} /${id} — ${BUILTIN_SKILL_PACKS[id].summary}`)
+    .join('\n');
+}
+
+function setSkillPackEnabled(id: BuiltinSkillPackId, enabled: boolean): string {
+  seedBuiltinSkillPacksIfMissing();
+  const state = _readSkillPackState();
+  state[id] = enabled;
+  _writeSkillPackState(state);
+  return `${enabled ? 'ON' : 'OFF'} /${id} — ${BUILTIN_SKILL_PACKS[id].title}`;
+}
+
+function handleSkillPackSlashCommand(text: string): string | null {
+  const trimmed = text.trim();
+  const [rawCmd, rawArg = ''] = trimmed.split(/\s+/, 2);
+  const cmd = rawCmd.toLowerCase();
+  if (cmd === '/skillpacks') {
+    seedBuiltinSkillPacksIfMissing();
+    return `Skill Packs\n\n${formatSkillPackStatus()}\n\n사용: /caveman on, /caveman off, /superpowers on, /superpowers off`;
+  }
+  if (cmd !== '/caveman' && cmd !== '/superpowers') return null;
+  const id = cmd.slice(1) as BuiltinSkillPackId;
+  const arg = rawArg.toLowerCase();
+  if (arg === 'off' || arg === 'disable' || arg === '0') return setSkillPackEnabled(id, false);
+  return setSkillPackEnabled(id, true);
+}
+
 function ensureCompanyStructure(): string {
   const dir = getCompanyDir();
   fs.mkdirSync(path.join(dir, '_shared'), { recursive: true });
@@ -5062,6 +5214,7 @@ function ensureCompanyStructure(): string {
   fs.mkdirSync(path.join(dir, 'sessions'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'approvals', 'pending'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'approvals', 'history'), { recursive: true });
+  seedBuiltinSkillPacksIfMissing();
   AGENT_ORDER.forEach(id => {
     fs.mkdirSync(path.join(dir, '_agents', id), { recursive: true });
     _seedAgentGoalIfMissing(id);
@@ -5630,6 +5783,10 @@ function readAgentSharedContext(agentId: string, opts?: { lean?: boolean }): str
       ctx += `\n\n[${AGENTS[agentId]?.name} 검증된 지식 (Self-RAG가 자가검증한 항목들 — 최우선 신뢰)]\n${verified.slice(0, 4000)}`;
     }
   }
+  try {
+    const packBlock = readEnabledSkillPacks(lean ? 2200 : 5000);
+    if (packBlock) ctx += packBlock;
+  } catch { /* never break the prompt */ }
   /* v2.89.115 — Curated skills (검증된 재사용 패턴). memory.md는 firehose,
      skills/는 사용자가 명시적으로 승격한 것만. 신뢰도가 더 높으므로 memory
      위에 배치하고 별도 라벨로 표시. */
@@ -17089,6 +17246,12 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                        모드 force. 사용자가 사이드바 toggle 안 해도 명시적 호출은 항상
                        specialist dispatch 흐름으로 → 매출/키트 shortcut 발동. */
                     const txt = String(msg.value || '');
+                    const skillPackResult = handleSkillPackSlashCommand(txt);
+                    if (skillPackResult) {
+                        try { ensureCompanyStructure(); } catch { /* ignore */ }
+                        this.postSystemNote(skillPackResult, '🧩');
+                        break;
+                    }
                     const hasExplicit = !!this._detectExplicitMention(txt);
                     if (msg.corporate || hasExplicit) {
                         this._sidebarCorpModeOn = true;

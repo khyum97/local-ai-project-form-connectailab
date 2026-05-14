@@ -1,4 +1,4 @@
-/* v2.93.0 - 13-agent development company roster.
+/* v2.94.0 - 13-agent development company roster.
  *
  * 13 agents: CEO + senior_dev + frontend + backend + devops + designer + qa
  * + writer + researcher + secretary + junior_dev + accountant + lawyer.
