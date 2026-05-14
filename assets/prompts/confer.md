@@ -11,7 +11,7 @@
 }
 
 규칙:
-1. 모든 from/to는 specialist id 중 하나 (youtube/instagram/designer/developer/business/secretary). CEO 제외.
+1. 모든 from/to는 specialist id 중 하나 (senior_dev/frontend/backend/devops/designer/qa/writer/researcher/secretary/junior_dev). CEO 제외.
 2. 각 turn 텍스트는 30자 이내. 짧게, 자연스럽게.
 3. 최소 3턴, 최대 5턴.
 4. 산출물 사이의 협업·확인·피드백 흐름이 보이게. 일반론·인사 X.
@@ -19,7 +19,7 @@
 
 예시:
 {"turns":[
-  {"from":"designer","to":"youtube","text":"썸네일 빨강 톤 OK?"},
-  {"from":"youtube","to":"designer","text":"OK, 글자 더 크게"},
-  {"from":"business","to":"instagram","text":"릴스 광고 단가 검토했어"}
+  {"from":"frontend","to":"designer","text":"버튼 컬러 토큰 확인했어?"},
+  {"from":"designer","to":"frontend","text":"primary-500 쓰면 돼"},
+  {"from":"backend","to":"frontend","text":"API 응답 타입 업데이트됐어"}
 ]}

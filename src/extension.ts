@@ -6493,6 +6493,58 @@ const AGENT_TOOLS_CATALOG: Record<string, { tool: string; desc: string; planned?
         { tool: 'team_briefing', desc: '주간 전체 회의 자동 진행 + 회의록 정리', planned: true },
         { tool: 'router', desc: '사용자 명령 → 적합한 specialist로 분배 (CEO 클래시파이어 내장)' }
     ],
+    senior_dev: [
+        { tool: 'web_init', desc: 'Vite/Next/Astro/Expo/vanilla project scaffold' },
+        { tool: 'pack_apply', desc: 'Apply bundled UI/app kits into a project' },
+        { tool: 'web_preview', desc: 'Run local dev server and extract preview URL' },
+        { tool: 'pwa_setup', desc: 'Convert a web app into a PWA' },
+        { tool: 'lint_test', desc: 'Run practical lint/build/test checks' },
+        { tool: 'sprint_planner', desc: 'Break a goal into scoped engineering tasks' },
+        { tool: 'code_review_checklist', desc: 'Produce a focused review checklist' }
+    ],
+    frontend: [
+        { tool: 'component_scaffold', desc: 'Generate UI component boilerplate' },
+        { tool: 'responsive_audit', desc: 'Audit responsive layout risks' },
+        { tool: 'a11y_check', desc: 'Check accessibility issues' },
+        { tool: 'storybook_setup', desc: 'Create Storybook setup notes/files' },
+        { tool: 'ui_audit', desc: 'Review UI polish and usability' }
+    ],
+    backend: [
+        { tool: 'api_scaffold', desc: 'Generate API route boilerplate' },
+        { tool: 'auth_scaffold', desc: 'Create authentication skeleton' },
+        { tool: 'db_health', desc: 'Check database health/config assumptions' },
+        { tool: 'env_check', desc: 'Validate backend environment variables' },
+        { tool: 'migration_gen', desc: 'Generate migration draft' }
+    ],
+    devops: [
+        { tool: 'ci_setup', desc: 'Create CI setup draft' },
+        { tool: 'deploy_check', desc: 'Run deployment readiness checklist' },
+        { tool: 'dockerfile_gen', desc: 'Generate Dockerfile draft' },
+        { tool: 'health_check_setup', desc: 'Create health-check setup' },
+        { tool: 'log_monitor', desc: 'Summarize logs and anomalies' }
+    ],
+    qa: [
+        { tool: 'test_scaffold', desc: 'Generate test skeleton' },
+        { tool: 'coverage_check', desc: 'Check coverage setup and gaps' },
+        { tool: 'bug_report', desc: 'Create reproducible bug report' },
+        { tool: 'perf_test', desc: 'Draft performance test plan/script' }
+    ],
+    junior_dev: [
+        { tool: 'boilerplate_gen', desc: 'Generate repetitive code boilerplate' },
+        { tool: 'comment_gen', desc: 'Draft concise code comments/docs' },
+        { tool: 'format_fix', desc: 'Run simple formatting cleanup guidance' },
+        { tool: 'util_scaffold', desc: 'Generate utility function scaffold' }
+    ],
+    accountant: [
+        { tool: 'pnl_report', desc: 'Generate profit-and-loss report' },
+        { tool: 'portfolio_summary', desc: 'Summarize assets/portfolio data' },
+        { tool: 'tax_calc', desc: 'Draft tax/supporting calculation report' }
+    ],
+    lawyer: [
+        { tool: 'compliance_check', desc: 'Run compliance checklist' },
+        { tool: 'contract_template', desc: 'Generate contract template draft' },
+        { tool: 'disclaimer_gen', desc: 'Generate disclaimer/policy draft' }
+    ],
     youtube: [
         { tool: 'youtube_account', desc: 'YouTube Data API v3 + OAuth 연결' },
         { tool: 'trend_sniper', desc: '키워드 기반 떡상 영상 패턴 분석' },
@@ -6513,6 +6565,8 @@ const AGENT_TOOLS_CATALOG: Record<string, { tool: string; desc: string; planned?
         { tool: 'insights_pull', desc: '도달·참여·팔로워 추이', planned: true }
     ],
     designer: [
+        { tool: 'wireframe_gen', desc: 'Generate wireframe draft/spec' },
+        { tool: 'design_tokens', desc: 'Generate design token draft' },
         { tool: 'image_local', desc: '로컬 SDXL/FLUX 이미지 생성 (오프라인 정체성)', planned: true },
         { tool: 'image_cloud', desc: 'DALL-E/Replicate (Connected 모드 토글)', planned: true },
         { tool: 'brand_check', desc: '브랜드 색상 팔레트·타이포 일관성 검증', planned: true },
@@ -6534,6 +6588,8 @@ const AGENT_TOOLS_CATALOG: Record<string, { tool: string; desc: string; planned?
         { tool: 'pnl_generator', desc: '월별 P&L 마크다운 자동 생성', planned: true }
     ],
     secretary: [
+        { tool: 'daily_report_gen', desc: 'Generate daily team report' },
+        { tool: 'meeting_minutes', desc: 'Generate structured meeting minutes' },
         { tool: 'telegram_setup', desc: '텔레그램 양방향 봇 (Bot Token + Chat ID)' },
         { tool: 'google_calendar_write', desc: 'Google Calendar OAuth 읽기·쓰기' },
         { tool: 'calendar_local', desc: '_agents/secretary/calendar.md (Lv.1 오프라인)', planned: true },
@@ -6547,11 +6603,15 @@ const AGENT_TOOLS_CATALOG: Record<string, { tool: string; desc: string; planned?
         { tool: 'music_to_video', desc: '생성된 BGM을 영상에 합성 (loop/fade)' }
     ],
     writer: [
+        { tool: 'readme_gen', desc: 'Generate README draft' },
+        { tool: 'api_doc_gen', desc: 'Generate API documentation draft' },
         { tool: 'tone_learner', desc: '사용자 과거 글 학습 → 톤 복제', planned: true },
         { tool: 'multi_platform_adapt', desc: '하나의 스크립트 → YouTube/IG/블로그 자동 변환', planned: true },
         { tool: 'hook_library', desc: '후크·CTA 라이브러리 운영', planned: true }
     ],
     researcher: [
+        { tool: 'lib_compare', desc: 'Compare libraries/framework options' },
+        { tool: 'stack_audit', desc: 'Audit technology stack and risks' },
         { tool: 'web_search', desc: 'Brave/DuckDuckGo 검색 (Connected)', planned: true },
         { tool: 'page_fetcher', desc: '본문 추출 + 출처 인용', planned: true },
         { tool: 'monitor_daily', desc: '매일 내 분야 뉴스 → CEO 브리핑', planned: true }

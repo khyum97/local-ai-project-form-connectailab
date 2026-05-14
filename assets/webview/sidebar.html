@@ -1495,7 +1495,7 @@ function renderOnboarding(){
     + '<div class="onboard-step-body">'
     +   '한 줄 명령으로 시작:<br>'
     +   '• <code>이 코드 설명해줘</code><br>'
-    +   '• <code>유튜브 영상 5개 기획 (👔 기업 모드)</code><br>'
+    +   '• <code>웹 앱 MVP를 실제로 만들어줘 (👔 기업 모드)</code><br>'
     +   '• <code>오늘 일과 텔레그램으로 보고 (👔 기업 모드)</code>'
     + '</div>'
     + '<div class="onboard-actions">'
@@ -2418,7 +2418,7 @@ function setDockOpen(open){
   const isOpen = !!open;
   dock.dataset.open = isOpen ? 'true' : 'false';
   chip.dataset.expanded = isOpen ? 'true' : 'false';
-  chip.title = isOpen ? '클릭해서 닫기' : '9명 specialist 모델 매핑 — 클릭해서 펼치기';
+  chip.title = isOpen ? '클릭해서 닫기' : '13명 개발회사 모델 매핑 — 클릭해서 펼치기';
   if (!isOpen) {
     try { closeDockPopover(); } catch {}
   }
@@ -2537,7 +2537,7 @@ function openDockPopover(card, agentData, opts){
   const isAllMode = opts && opts.allMode;
   const headEmoji = isAllMode ? '🔁' : (agentData.emoji||'🤖');
   const headName = isAllMode ? '모든 specialist 같은 모델로' : (agentData.name || agentData.id);
-  const headRole = isAllMode ? '선택한 모델이 9명 모두에게 적용됩니다' : (agentData.role || '');
+  const headRole = isAllMode ? '선택한 모델이 13명 모두에게 적용됩니다' : (agentData.role || '');
   pop.innerHTML = ''
     + '<div class="ad-popover-head">'
     +   '<div class="ph-emoji">' + headEmoji + '</div>'
@@ -2638,7 +2638,7 @@ function _wireDockActions(){
   const allBtn = document.getElementById('adAllBtn');
   const refreshBtn = document.getElementById('adRefreshBtn');
   if (autoBtn) autoBtn.addEventListener('click', ()=>{
-    if (!confirm('⚡ 자동 매핑\n\n시스템 사양과 설치된 모델을 보고 9명 specialist의 모델을 자동으로 분배합니다.\n(예: 작은 모델 → CEO·비서 · 큰 모델 → researcher·youtube 분석)\n\n현재 매핑이 덮어써집니다. 계속할까요?')) return;
+    if (!confirm('⚡ 자동 매핑\n\n시스템 사양과 설치된 모델을 보고 13명 개발회사 직원의 모델을 자동으로 분배합니다.\n(예: 작은 모델 → 비서·주니어 개발자 · 큰 모델 → 시니어 개발자·리서처)\n\n현재 매핑이 덮어써집니다. 계속할까요?')) return;
     vscode.postMessage({type:'autoMapAgents'});
   });
   if (allBtn) allBtn.addEventListener('click', ()=>{
@@ -2646,7 +2646,7 @@ function _wireDockActions(){
     /* 가짜 agent 데이터로 popover 재사용 — "all 모드" 플래그만 켜서 한 모델 선택 시 모든 specialist에 적용 */
     const card = document.querySelector('.ag-card');
     const anchor = card || allBtn;
-    openDockPopover(anchor, { id:'__all__', name:'모든 specialist', emoji:'🔁', role:'선택한 모델이 9명 모두에게 적용됩니다', currentModel:'' }, { allMode:true });
+    openDockPopover(anchor, { id:'__all__', name:'모든 직원', emoji:'🔁', role:'선택한 모델이 13명 모두에게 적용됩니다', currentModel:'' }, { allMode:true });
   });
   if (refreshBtn) refreshBtn.addEventListener('click', ()=>{
     vscode.postMessage({type:'loadAgentDock'});
@@ -2716,8 +2716,8 @@ function addCorpBanner(text){
 /* ===== Agent panel — clicking any card opens this ===== */
 /* All agents now live — Mission editing, Retrieval Strategy (Self-RAG /
    Graph RAG), agent memory, and brain context bridge all work agent-agnostic.
-   YouTube has the deepest tool catalog; the others just show empty Skills. */
-const AGENT_LIVE = {ceo:true, youtube:true, instagram:true, designer:true, developer:true, business:true, secretary:true, editor:true, writer:true, researcher:true};
+   Development-company agents now share the same panel and tool manifest flow. */
+const AGENT_LIVE = {ceo:true, senior_dev:true, frontend:true, backend:true, devops:true, designer:true, qa:true, writer:true, researcher:true, secretary:true, junior_dev:true, accountant:true, lawyer:true};
 let _agentPanelOpen = false;
 let _agentPanelLoadHandler = null;
 let _toolConfigLoadHandler = null;
@@ -2792,6 +2792,14 @@ function _showAgentPanelInner(agent){
     writer:     _hi + (firstSpec || '카피·스크립트') + ' 써드려요.',
     researcher: _hi + (firstSpec || '리서치·사실 확인') + ' 맡고 있어요.',
     ceo:        _hi + '회사 전체 의사결정을 맡고 있어요.',
+    senior_dev: _hi + (firstSpec || '아키텍처·핵심 구현') + ' 맡고 있어요.',
+    frontend:   _hi + (firstSpec || '프론트엔드 UI') + ' 맡고 있어요.',
+    backend:    _hi + (firstSpec || '백엔드 API·데이터') + ' 맡고 있어요.',
+    devops:     _hi + (firstSpec || '배포·자동화') + ' 맡고 있어요.',
+    qa:         _hi + (firstSpec || '테스트·품질') + ' 맡고 있어요.',
+    junior_dev: _hi + (firstSpec || '반복 구현 보조') + ' 맡고 있어요.',
+    accountant: _hi + (firstSpec || '재무·정산') + ' 맡고 있어요.',
+    lawyer:     _hi + (firstSpec || '법무·컴플라이언스') + ' 맡고 있어요.',
   };
   const greetText = greetingByRole[agent.id] || (_hi);
   const greet = live
@@ -3914,7 +3922,7 @@ const _BOOT_STEPS = [
   { tag:'STAGE 2 / 3 · STEP 2', h1:'<span class="accent">목표</span>를 정합니다',
     sub:'에이전트들이 매 사이클 이 목표를 보고 다음 한 스텝을 결정합니다. 추상적인 것보다 결과로 측정 가능한 형태가 좋아요.',
     fields:[
-      { key:'goalYear',  emoji:'🚀', label:'올해 핵심 목표 1개', placeholder:'예: 유튜브 구독자 1만 도달' },
+      { key:'goalYear',  emoji:'🚀', label:'올해 핵심 목표 1개', placeholder:'예: 첫 유료 MVP 출시' },
       { key:'goalMonth', emoji:'📅', label:'이번 달 안에 끝낼 목표 1개', placeholder:'예: 영상 4편 업로드 + 댓글 패턴 정리' },
     ]},
   { tag:'STAGE 2 / 3 · STEP 3', h1:'지금 <span class="accent">가장 필요한 것</span>은?',
@@ -4163,7 +4171,7 @@ function showCompanyEditCard(){
     +   '<div class="cs-section"><div class="cs-section-label">회사·브랜드 이름</div><input class="cs-input" id="csName" placeholder="예: 제이코프 / 1인 크리에이터"></div>'
     +   '<div class="cs-section"><div class="cs-section-label">한 줄 소개</div><input class="cs-input" id="csOneLiner" placeholder="예: 자기계발 콘텐츠 만드는 1인 크리에이터"></div>'
     +   '<div class="cs-section"><div class="cs-section-label">타깃 청중 <span class="cs-section-help">누구를 위해 만드나요</span></div><input class="cs-input" id="csAudience" placeholder="예: 30대 직장인, 자격증 준비생"></div>'
-    +   '<div class="cs-section"><div class="cs-section-label">🎯 올해 핵심 목표</div><input class="cs-input" id="csGoalYear" placeholder="예: 유튜브 구독자 1만"></div>'
+    +   '<div class="cs-section"><div class="cs-section-label">🎯 올해 핵심 목표</div><input class="cs-input" id="csGoalYear" placeholder="예: 첫 유료 MVP 출시"></div>'
     +   '<div class="cs-section"><div class="cs-section-label">📅 이번 달 목표</div><input class="cs-input" id="csGoalMonth" placeholder="예: 영상 4편 + 댓글 패턴 정리"></div>'
     +   '<div class="cs-section"><div class="cs-section-label">🆘 지금 가장 필요한 것 <span class="cs-section-help">시간 / 돈 / 사람 / 툴 / 지식</span></div><textarea class="cs-textarea" id="csNeeds" placeholder="예: 썸네일 디자인 시간이 너무 오래 걸림 → 자동화 필요"></textarea></div>'
     +   '<div class="cs-section"><div class="cs-section-label">브랜드 톤 <span class="cs-section-help">선택 — 어떤 말투로 말할지</span></div><input class="cs-input" id="csTone" placeholder="예: 직설적, 데이터 기반, 친근함"></div>'
@@ -4303,7 +4311,7 @@ let agentMiniDotEls={};
        기본 비활성, 카드 회색. 클릭 시 confirm → 활성화.
      - always-on (CEO, secretary, youtube, writer, designer): 항상 활성.
    두 화면 (사이드바·대쉬보드) 어디서든 같은 정보를 봄. */
-const LOCKED_AGENTS = { editor: true };  /* 사운드 디렉터(editor=루나) — PIN 게이트 */
+const LOCKED_AGENTS = {};
 /* v2.89.110 — 자율성 + 합리적 기본값:
    - ALWAYS_ON (1명): CEO 시스템 필수
    - DEFAULT_ON (4명): 새 사용자 첫 진입 시 자동 활성화 (사용자 OFF 가능)
@@ -4311,8 +4319,8 @@ const LOCKED_AGENTS = { editor: true };  /* 사운드 디렉터(editor=루나) �
    - LOCKED (1명): Luna PIN
    첫 화면이 "비어 있지 않게" 하면서도 사용자 선택권 유지. */
 const ALWAYS_ON_AGENTS = new Set(['ceo']);
-const DEFAULT_ON_AGENTS = new Set(['secretary','youtube','writer','designer']);
-const OPTIONAL_AGENTS = new Set(['secretary','youtube','writer','designer','instagram','business','developer','researcher']);
+const DEFAULT_ON_AGENTS = new Set(['secretary','senior_dev','frontend','backend','devops','designer','qa','writer','researcher','junior_dev']);
+const OPTIONAL_AGENTS = new Set(['secretary','senior_dev','frontend','backend','devops','designer','qa','writer','researcher','junior_dev']);
 let _backendHiredAgents = null;  /* backend 동기화. null = 미수신 */
 let _backendActiveAgents = null;  /* v2.89.107 active.json 동기화 */
 
@@ -4934,8 +4942,8 @@ window.addEventListener('message',e=>{const msg=e.data;switch(msg.type){
          내려보세요" 만으로 무엇이 가능한지 모호했음. */
       const co = companyState.name || '회사';
       /* v2.89.110 — 기본 5명 ON + 옵션 4명 OFF + 루나 PIN. 사용자가 카드 클릭해서 자유롭게 변경 가능. */
-      addCorpBanner('✅ '+co+' 출범! 9명 팀 — 🟢 기본 ON 5명: 🧭 CEO · 📺 YouTube · 🎨 디자이너 · ✍️ 작가 · 📅 비서 (사용자가 OFF 가능) / ⏸ 옵션 4명 (📷 인스타·💼 비즈·🛠 개발·🔍 리서치): 카드 클릭해서 ON / 🔒 1명 (🎵 루나): 채용 PIN 필요');
-      addCorpBanner('💡 "다음 영상 컨셉 5개 뽑아줘" 처럼 자연어로 던지시면 CEO가 분배합니다.');
+      addCorpBanner('✅ '+co+' 출범! 13명 개발회사 — 🧭 CEO · 💻 시니어 · 🖥 프론트 · 🗄 백엔드 · 🚀 DevOps · 🎨 디자인 · 🧪 QA · ✍️ 작가 · 🔍 리서치 · 📅 비서 · 🧑‍💻 주니어 · 💰 회계 · ⚖ 법무');
+      addCorpBanner('💡 "결제되는 SaaS MVP를 만들어줘" 처럼 자연어로 던지시면 CEO가 일을 나눕니다.');
     }
     break;
   case 'sessionsList':

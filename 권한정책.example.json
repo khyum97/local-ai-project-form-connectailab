@@ -1,0 +1,53 @@
+{
+  "defaultMode": "full",
+  "allowedRoots": [
+    "E:/local_llm_agent",
+    "D:/work"
+  ],
+  "protectedPaths": [
+    "C:/Windows",
+    "C:/Program Files",
+    "C:/Program Files (x86)",
+    "C:/ProgramData"
+  ],
+  "dangerousCommandsRequireApproval": [
+    "Remove-Item",
+    "del ",
+    "rmdir",
+    "rm -rf",
+    "format ",
+    "diskpart",
+    "git push",
+    "npm publish",
+    "docker push",
+    "kubectl delete",
+    "terraform destroy"
+  ],
+  "agents": {
+    "qa": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "npm test",
+        "npm run build",
+        "npm run compile",
+        "pytest",
+        "python"
+      ]
+    },
+    "senior_dev": {
+      "canReadFiles": true,
+      "canEditFiles": true,
+      "canDeleteFiles": false,
+      "canRunCommands": true
+    },
+    "developer": {
+      "canReadFiles": true,
+      "canEditFiles": true,
+      "canDeleteFiles": false,
+      "canRunCommands": true
+    }
+  }
+}
