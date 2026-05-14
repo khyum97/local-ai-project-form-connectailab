@@ -7308,6 +7308,114 @@ function makeSessionDir(): string {
   return dir;
 }
 
+type CompanyWorkPlan = {
+  brief: string;
+  tasks: { agent: string; task: string }[];
+  acceptanceCriteria?: string[];
+  deliverables?: string[];
+};
+
+function _asStringArray(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12)
+    : [];
+}
+
+function _normalizeWorkPlan(obj: any): CompanyWorkPlan | null {
+  if (!obj || !Array.isArray(obj.tasks) || obj.tasks.length === 0) return null;
+  const tasks = obj.tasks
+    .map((t: any) => ({ agent: String(t?.agent || '').trim(), task: String(t?.task || '').trim() }))
+    .filter((t: { agent: string; task: string }) => t.agent && t.task);
+  if (tasks.length === 0) return null;
+  return {
+    brief: String(obj.brief || '').trim(),
+    tasks,
+    acceptanceCriteria: _asStringArray(obj.acceptanceCriteria || obj.acceptance_criteria || obj.doneCriteria),
+    deliverables: _asStringArray(obj.deliverables || obj.outputs || obj.artifacts),
+  };
+}
+
+function writeRunContract(sessionDir: string, prompt: string, plan: CompanyWorkPlan) {
+  const taskLines = plan.tasks.map(t => `- ${AGENTS[t.agent]?.emoji || ''} **${AGENTS[t.agent]?.name || t.agent}**: ${t.task}`).join('\n');
+  const acceptance = (plan.acceptanceCriteria && plan.acceptanceCriteria.length > 0)
+    ? plan.acceptanceCriteria.map(x => `- [ ] ${x}`).join('\n')
+    : '- [ ] Assigned agents produced usable output\n- [ ] Files/actions/results are recorded in this run folder\n- [ ] CEO final report states done, blocked, and next action';
+  const deliverables = (plan.deliverables && plan.deliverables.length > 0)
+    ? plan.deliverables.map(x => `- ${x}`).join('\n')
+    : '- Agent output markdown files\n- `_report.md` CEO final report\n- `_quality.md` practical QA checklist\n- `_manifest.json` machine-readable run index';
+  fs.writeFileSync(
+    path.join(sessionDir, '_contract.md'),
+    `# Company Run Contract\n\n` +
+    `## User Request\n${prompt}\n\n` +
+    `## Brief\n${plan.brief || '(no brief)'}\n\n` +
+    `## Assigned Work\n${taskLines}\n\n` +
+    `## Expected Deliverables\n${deliverables}\n\n` +
+    `## Acceptance Criteria\n${acceptance}\n`
+  );
+}
+
+function writeRunQualityReport(
+  sessionDir: string,
+  plan: CompanyWorkPlan,
+  outputs: Record<string, string>,
+  agentMeta: Record<string, { toolsUsed: string[]; outputLength: number; outputSummary: string; prefetchSummary: string }>
+): string {
+  const rows: string[] = [];
+  let produced = 0;
+  let blocked = 0;
+  for (const t of plan.tasks) {
+    const out = (outputs[t.agent] || '').trim();
+    const meta = agentMeta[t.agent];
+    const hasOutput = out.length > 30;
+    const isBlocked = /LLM .*failed|blocked|credentials|OAuth|API key|missing|error|failed/i.test(out);
+    if (hasOutput && !isBlocked) produced += 1;
+    if (isBlocked) blocked += 1;
+    rows.push(`### ${AGENTS[t.agent]?.emoji || ''} ${AGENTS[t.agent]?.name || t.agent}`);
+    rows.push(`- Status: ${isBlocked ? 'blocked' : hasOutput ? 'produced' : 'empty'}`);
+    rows.push(`- Output file: \`${t.agent}.md\``);
+    rows.push(`- Output length: ${meta?.outputLength || out.length}`);
+    rows.push(`- Tools used: ${meta?.toolsUsed?.length ? meta.toolsUsed.map(x => '`' + x + '`').join(', ') : '(none recorded)'}`);
+    if (meta?.prefetchSummary) rows.push(`- Input data: ${meta.prefetchSummary}`);
+    if (meta?.outputSummary) rows.push(`- Summary: ${meta.outputSummary}`);
+    rows.push('');
+  }
+  const criteria = (plan.acceptanceCriteria && plan.acceptanceCriteria.length > 0)
+    ? plan.acceptanceCriteria.map(x => `- ${produced > 0 ? '[x]' : '[ ]'} ${x}`).join('\n')
+    : [
+        `- [${produced > 0 ? 'x' : ' '}] At least one agent produced a usable result`,
+        `- [${Object.keys(outputs).length > 0 ? 'x' : ' '}] Agent outputs were saved to the run folder`,
+        `- [${blocked === 0 ? 'x' : ' '}] No blocking credential/runtime issue detected`,
+      ].join('\n');
+  const report =
+    `# Run Quality Check\n\n` +
+    `## Summary\n- Produced: ${produced}/${plan.tasks.length}\n- Blocked: ${blocked}/${plan.tasks.length}\n\n` +
+    `## Acceptance Criteria\n${criteria}\n\n` +
+    `## Agent Checks\n${rows.join('\n')}`;
+  fs.writeFileSync(path.join(sessionDir, '_quality.md'), report);
+  return report;
+}
+
+function writeRunManifest(sessionDir: string, prompt: string, plan: CompanyWorkPlan, finalReport: string, qualityReport: string) {
+  const manifest = {
+    runId: path.basename(sessionDir),
+    createdAt: new Date().toISOString(),
+    userRequest: prompt,
+    brief: plan.brief,
+    acceptanceCriteria: plan.acceptanceCriteria || [],
+    deliverables: plan.deliverables || [],
+    tasks: plan.tasks.map(t => ({
+      agent: t.agent,
+      agentName: AGENTS[t.agent]?.name || t.agent,
+      task: t.task,
+      outputFile: `${t.agent}.md`,
+    })),
+    files: ['_contract.md', '_brief.md', ...plan.tasks.map(t => `${t.agent}.md`), '_quality.md', '_report.md'],
+    qualitySummary: qualityReport.split('\n').slice(0, 12).join('\n'),
+    reportPreview: finalReport.slice(0, 1200),
+  };
+  fs.writeFileSync(path.join(sessionDir, '_manifest.json'), JSON.stringify(manifest, null, 2));
+}
+
 const CEO_PLANNER_PROMPT = _loadPrompt('ceo-planner.md');
 /* Conversational CEO prompt — used for the casual-chat fast path so a "안녕"
    doesn't crash the JSON planner. Small models will reply with a polite
@@ -19731,15 +19839,14 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             // (b) 견고한 balanced extractor (_extractFirstJsonObject)
             // (c) 잘린 JSON → 정규식으로 task 항목만이라도 회수
             // (d) 그래도 비면 jsonMode + 슬림 컨텍스트로 1회 자동 재시도
-            type Plan = { brief: string; tasks: { agent: string; task: string }[] };
-            const _parsePlan = (raw: string): Plan | null => {
+            const _parsePlan = (raw: string): CompanyWorkPlan | null => {
                 if (!raw) return null;
                 /* (a) HTML/XML 잡음 제거 — `="num">2026</span>` 같은 토크나이저 사고. */
                 const cleaned = raw.replace(/<\/?[a-zA-Z][^>]*>/g, '').replace(/="[a-zA-Z0-9_-]+">/g, '');
                 /* (b) balanced extractor */
                 const obj = _extractFirstJsonObject(cleaned);
                 if (obj && Array.isArray(obj.tasks) && obj.tasks.length > 0) {
-                    return { brief: String(obj.brief || ''), tasks: obj.tasks };
+                    return _normalizeWorkPlan(obj);
                 }
                 /* (c) 잘린 JSON 복구 — agent/task 쌍을 직접 추출 */
                 const tasks: { agent: string; task: string }[] = [];
@@ -19753,18 +19860,18 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 if (tasks.length > 0) {
                     const briefM = cleaned.match(/"brief"\s*:\s*"((?:[^"\\]|\\.)*?)(?:"|$)/);
                     const brief = briefM ? briefM[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').trim() : '';
-                    return { brief, tasks };
+                    return _normalizeWorkPlan({ brief, tasks });
                 }
                 return null;
             };
-            let plan: Plan | null = _parsePlan(planRaw);
+            let plan: CompanyWorkPlan | null = _parsePlan(planRaw);
 
             /* (d) 1회 자동 재시도 — 회사 컨텍스트 빼고 더 강한 JSON 지시로. */
             if (!plan) {
                 try { _activeChatProvider?.postSystemNote?.('CEO 첫 응답 파싱 실패 — JSON 모드로 1회 재시도', '🔄'); } catch { /* ignore */ }
                 try {
                     const retryRaw = await this._callAgentLLM(
-                        `${_personalizePrompt(CEO_PLANNER_PROMPT)}\n\n[중요] 오직 JSON 한 객체만 출력. 설명/주석/마크다운 금지. 형식: {"brief":"…","tasks":[{"agent":"<id>","task":"…"}]}`,
+                        `${_personalizePrompt(CEO_PLANNER_PROMPT)}\n\n[중요] 오직 JSON 한 객체만 출력. 설명/주석/마크다운 금지. 형식: {"brief":"…","deliverables":["…"],"acceptanceCriteria":["…"],"tasks":[{"agent":"<id>","task":"…"}]}`,
                         `[사용자 명령]\n${prompt}`,
                         modelName,
                         'ceo',
@@ -19882,6 +19989,7 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                     path.join(sessionDir, '_brief.md'),
                     `# 📋 작업 브리프\n\n**원 명령:** ${prompt}\n\n## 요약\n${plan.brief}\n\n## 분배\n${plan.tasks.map(t => `- **${AGENTS[t.agent]?.emoji} ${AGENTS[t.agent]?.name}**: ${t.task}`).join('\n')}\n`
                 );
+                writeRunContract(sessionDir, prompt, plan);
             } catch { /* ignore */ }
 
             /* v2.89.148 — 가상 사무실 시각적 협업 동기화.
@@ -20581,8 +20689,20 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 }
             }
 
+            let qualityReport = '';
             try {
+                qualityReport = writeRunQualityReport(sessionDir, plan, outputs, agentMeta);
+                const runFiles = [
+                    '_contract.md',
+                    '_brief.md',
+                    ...plan.tasks.map(t => `${t.agent}.md`),
+                    '_quality.md',
+                    '_manifest.json',
+                    '_report.md',
+                ];
+                finalReport = `${finalReport}\n\n---\n\n## Run Artifacts\n${runFiles.map(f => `- \`${f}\``).join('\n')}\n\n## Quality Gate\nSee \`_quality.md\` for the saved acceptance check.`;
                 fs.writeFileSync(path.join(sessionDir, '_report.md'), `# 📝 CEO 종합 보고서\n\n${finalReport}\n`);
+                writeRunManifest(sessionDir, prompt, plan, finalReport, qualityReport);
             } catch { /* ignore */ }
             appendAgentMemory('ceo', `${prompt} → 보고서 sessions/${path.basename(sessionDir)}/_report.md`);
             // Phase 1: log CEO's final synthesis into the running transcript
