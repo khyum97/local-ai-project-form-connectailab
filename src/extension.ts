@@ -1976,6 +1976,8 @@ const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대�
 \`/skillpacks\` — Caveman/Superpowers 적용 상태 보기
 \`/caveman on|off\` — terse 응답 모드 토글
 \`/superpowers on|off\` — 계획·디버깅·검증 워크플로우 토글
+\`/project status|list|create|switch|pause|archive\` — 프로젝트 전환/중지/보관
+\`/factory status|on|pause|stop|add\` — 작업 공장 큐 상태/가동/정지/티켓 추가
 \`/help\` — 이 도움말`;
 
 const AUTONOMY_LABELS: Record<number, string> = {
@@ -2044,9 +2046,9 @@ async function handleTelegramCommand(text: string): Promise<void> {
         await sendTelegramReport(TELEGRAM_HELP);
         return;
     }
-    const skillPackResult = handleSkillPackSlashCommand(trimmed);
-    if (skillPackResult) {
-        await sendTelegramReport(skillPackResult);
+    const opsResult = handleOpsCommand(trimmed);
+    if (opsResult) {
+        await sendTelegramReport(opsResult);
         return;
     }
     /* Plan B (2026-05-03 단순화) — 슬래시 명령은 4개만 유지:
@@ -5196,6 +5198,18 @@ function handleSkillPackSlashCommand(text: string): string | null {
   const trimmed = text.trim();
   const [rawCmd, rawArg = ''] = trimmed.split(/\s+/, 2);
   const cmd = rawCmd.toLowerCase();
+  const lower = trimmed.toLowerCase();
+  const wantsOn = /(on|켜|적용|활성|시작|enable|activate)/i.test(trimmed);
+  const wantsOff = /(off|꺼|해제|비활성|중지|disable|deactivate|normal mode|일반 모드)/i.test(trimmed);
+  if (!trimmed.startsWith('/')) {
+    if (/(슈퍼파워|superpowers?|super powers?)/i.test(trimmed)) {
+      return setSkillPackEnabled('superpowers', !wantsOff || wantsOn);
+    }
+    if (/(케이브맨|caveman|동굴\s*모드|일반\s*모드|normal mode)/i.test(lower)) {
+      return setSkillPackEnabled('caveman', !wantsOff || wantsOn);
+    }
+    return null;
+  }
   if (cmd === '/skillpacks') {
     seedBuiltinSkillPacksIfMissing();
     return `Skill Packs\n\n${formatSkillPackStatus()}\n\n사용: /caveman on, /caveman off, /superpowers on, /superpowers off`;
@@ -5207,6 +5221,300 @@ function handleSkillPackSlashCommand(text: string): string | null {
   return setSkillPackEnabled(id, true);
 }
 
+interface ProjectIndex {
+  active: string;
+  projects: Record<string, { name: string; slug: string; status: 'active' | 'paused' | 'archived'; createdAt: string; updatedAt: string }>;
+}
+
+interface FactoryState {
+  enabled: boolean;
+  status: 'running' | 'paused' | 'stopped';
+  updatedAt: string;
+}
+
+interface FactoryTicket {
+  id: string;
+  title: string;
+  status: 'backlog' | 'doing' | 'review' | 'shipped' | 'blocked';
+  owner?: string;
+  acceptance?: string;
+  project?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function _projectsDir(): string {
+  return path.join(getCompanyDir(), 'projects');
+}
+
+function _projectIndexPath(): string {
+  return path.join(_projectsDir(), 'current.json');
+}
+
+function _factoryDir(): string {
+  return path.join(getCompanyDir(), 'factory');
+}
+
+function _factoryStatePath(): string {
+  return path.join(_factoryDir(), 'state.json');
+}
+
+function _factoryBacklogPath(): string {
+  return path.join(_factoryDir(), 'backlog.json');
+}
+
+function _slugProjectName(name: string): string {
+  let s = (name || '').trim().toLowerCase();
+  s = s.replace(/[\\/:*?"<>|]/g, ' ');
+  s = s.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  return s.slice(0, 60) || `project-${Date.now()}`;
+}
+
+function _readProjectIndex(): ProjectIndex {
+  try {
+    const raw = _safeReadText(_projectIndexPath()).trim();
+    if (!raw) return { active: '', projects: {} };
+    const parsed = JSON.parse(raw);
+    return {
+      active: typeof parsed.active === 'string' ? parsed.active : '',
+      projects: parsed.projects && typeof parsed.projects === 'object' ? parsed.projects : {},
+    };
+  } catch { return { active: '', projects: {} }; }
+}
+
+function _writeProjectIndex(idx: ProjectIndex) {
+  fs.mkdirSync(_projectsDir(), { recursive: true });
+  fs.writeFileSync(_projectIndexPath(), JSON.stringify(idx, null, 2));
+}
+
+function _projectDir(slug: string): string {
+  return path.join(_projectsDir(), slug);
+}
+
+function seedProjectWorkspaceIfMissing() {
+  try {
+    fs.mkdirSync(_projectsDir(), { recursive: true });
+    const idx = _readProjectIndex();
+    if (!idx.active) {
+      const now = new Date().toISOString();
+      idx.active = 'main';
+      idx.projects.main = idx.projects.main || { name: 'main', slug: 'main', status: 'active', createdAt: now, updatedAt: now };
+      _writeProjectIndex(idx);
+    }
+    for (const slug of Object.keys(idx.projects)) {
+      const dir = _projectDir(slug);
+      fs.mkdirSync(path.join(dir, 'sessions'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'artifacts'), { recursive: true });
+      const defaults: Record<string, string> = {
+        'vision.md': `# ${idx.projects[slug].name}\n\n## 목표\n- 실제 사용 가능한 결과물을 지속적으로 만든다.\n`,
+        'backlog.json': JSON.stringify({ tickets: [] }, null, 2),
+        'decision-log.md': `# Decision Log\n\n`,
+        'release-notes.md': `# Release Notes\n\n`,
+        'architecture.md': `# Architecture\n\n`,
+      };
+      for (const [file, body] of Object.entries(defaults)) {
+        const p = path.join(dir, file);
+        if (!fs.existsSync(p)) fs.writeFileSync(p, body);
+      }
+    }
+  } catch { /* never block company startup */ }
+}
+
+function seedFactoryIfMissing() {
+  try {
+    fs.mkdirSync(_factoryDir(), { recursive: true });
+    if (!fs.existsSync(_factoryStatePath())) {
+      fs.writeFileSync(_factoryStatePath(), JSON.stringify({ enabled: false, status: 'paused', updatedAt: new Date().toISOString() }, null, 2));
+    }
+    if (!fs.existsSync(_factoryBacklogPath())) {
+      fs.writeFileSync(_factoryBacklogPath(), JSON.stringify({ tickets: [] }, null, 2));
+    }
+  } catch { /* never block company startup */ }
+}
+
+function _readFactoryState(): FactoryState {
+  try {
+    const parsed = JSON.parse(_safeReadText(_factoryStatePath()) || '{}');
+    const status = ['running', 'paused', 'stopped'].includes(parsed.status) ? parsed.status : 'paused';
+    return { enabled: !!parsed.enabled, status, updatedAt: parsed.updatedAt || new Date().toISOString() };
+  } catch { return { enabled: false, status: 'paused', updatedAt: new Date().toISOString() }; }
+}
+
+function _writeFactoryState(state: FactoryState) {
+  fs.mkdirSync(_factoryDir(), { recursive: true });
+  fs.writeFileSync(_factoryStatePath(), JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2));
+}
+
+function _readFactoryBacklog(): { tickets: FactoryTicket[] } {
+  try {
+    const parsed = JSON.parse(_safeReadText(_factoryBacklogPath()) || '{}');
+    return { tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [] };
+  } catch { return { tickets: [] }; }
+}
+
+function _writeFactoryBacklog(backlog: { tickets: FactoryTicket[] }) {
+  fs.mkdirSync(_factoryDir(), { recursive: true });
+  fs.writeFileSync(_factoryBacklogPath(), JSON.stringify(backlog, null, 2));
+}
+
+function readActiveProjectContext(maxChars = 3200): string {
+  const idx = _readProjectIndex();
+  const active = idx.active;
+  if (!active || !idx.projects[active]) return '';
+  const dir = _projectDir(active);
+  const parts = [
+    ['vision', _safeReadText(path.join(dir, 'vision.md'))],
+    ['architecture', _safeReadText(path.join(dir, 'architecture.md'))],
+    ['decision-log', _safeReadText(path.join(dir, 'decision-log.md')).slice(-1200)],
+    ['project-backlog', _safeReadText(path.join(dir, 'backlog.json')).slice(0, 1200)],
+  ].filter(([, body]) => body.trim());
+  let out = `\n\n[현재 활성 프로젝트]\n- name: ${idx.projects[active].name}\n- slug: ${active}\n- status: ${idx.projects[active].status}\n`;
+  for (const [label, body] of parts) {
+    if (out.length >= maxChars) break;
+    out += `\n[project:${label}]\n${body.slice(0, Math.max(200, maxChars - out.length))}\n`;
+  }
+  return out;
+}
+
+function _projectStatusText(): string {
+  const idx = _readProjectIndex();
+  const active = idx.active && idx.projects[idx.active] ? idx.projects[idx.active] : null;
+  const rows = Object.values(idx.projects)
+    .sort((a, b) => a.slug.localeCompare(b.slug))
+    .map(p => `${p.slug === idx.active ? '*' : '-'} ${p.slug} (${p.status}) — ${p.name}`)
+    .join('\n') || '(프로젝트 없음)';
+  return `Project Status\n\nactive: ${active ? `${active.slug} — ${active.name}` : '(none)'}\n\n${rows}`;
+}
+
+function handleProjectCommand(text: string): string | null {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^\/project(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
+  if (!m) return null;
+  seedProjectWorkspaceIfMissing();
+  const action = (m[1] || 'status').toLowerCase();
+  const arg = (m[2] || '').trim();
+  const idx = _readProjectIndex();
+  const now = new Date().toISOString();
+  if (action === 'status' || action === 'list') return _projectStatusText();
+  if (action === 'create') {
+    if (!arg) return '사용: /project create <name>';
+    const slug = _slugProjectName(arg);
+    idx.projects[slug] = idx.projects[slug] || { name: arg, slug, status: 'active', createdAt: now, updatedAt: now };
+    idx.projects[slug].status = 'active';
+    idx.projects[slug].updatedAt = now;
+    idx.active = slug;
+    _writeProjectIndex(idx);
+    seedProjectWorkspaceIfMissing();
+    return `Project created and switched: ${slug}`;
+  }
+  if (action === 'switch') {
+    const slug = _slugProjectName(arg);
+    if (!idx.projects[slug]) return `프로젝트 없음: ${slug}\n\n${_projectStatusText()}`;
+    idx.active = slug;
+    idx.projects[slug].status = 'active';
+    idx.projects[slug].updatedAt = now;
+    _writeProjectIndex(idx);
+    return `Project switched: ${slug}`;
+  }
+  if (action === 'pause') {
+    const slug = arg ? _slugProjectName(arg) : idx.active;
+    if (!slug || !idx.projects[slug]) return 'pause할 프로젝트 없음.';
+    idx.projects[slug].status = 'paused';
+    idx.projects[slug].updatedAt = now;
+    _writeProjectIndex(idx);
+    return `Project paused: ${slug}`;
+  }
+  if (action === 'archive') {
+    const slug = _slugProjectName(arg);
+    if (!slug || !idx.projects[slug]) return '사용: /project archive <name>';
+    const src = _projectDir(slug);
+    const archiveRoot = path.join(getCompanyDir(), 'archive', 'projects');
+    fs.mkdirSync(archiveRoot, { recursive: true });
+    const dst = path.join(archiveRoot, `${slug}-${now.replace(/[-:T.]/g, '').slice(0, 14)}`);
+    if (fs.existsSync(src)) fs.renameSync(src, dst);
+    idx.projects[slug].status = 'archived';
+    idx.projects[slug].updatedAt = now;
+    if (idx.active === slug) {
+      const next = Object.values(idx.projects).find(p => p.slug !== slug && p.status !== 'archived');
+      idx.active = next?.slug || '';
+    }
+    _writeProjectIndex(idx);
+    return `Project archived: ${slug}\narchive: ${dst}`;
+  }
+  return '사용: /project status | list | create <name> | switch <name> | pause [name] | archive <name>';
+}
+
+function _factoryStatusText(): string {
+  const state = _readFactoryState();
+  const backlog = _readFactoryBacklog().tickets;
+  const counts = ['backlog', 'doing', 'review', 'shipped', 'blocked']
+    .map(s => `${s}: ${backlog.filter(t => t.status === s).length}`)
+    .join(', ');
+  const next = backlog.filter(t => t.status !== 'shipped').slice(0, 5)
+    .map(t => `- ${t.status} ${t.id.slice(-8)} ${t.title}`)
+    .join('\n') || '(open ticket 없음)';
+  return `Factory Status\n\nstate: ${state.status}\nenabled: ${state.enabled}\n${counts}\n\n${next}`;
+}
+
+function handleFactoryCommand(text: string): string | null {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^\/factory(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
+  if (!m) return null;
+  seedFactoryIfMissing();
+  seedProjectWorkspaceIfMissing();
+  const action = (m[1] || 'status').toLowerCase();
+  const arg = (m[2] || '').trim();
+  if (action === 'status') return _factoryStatusText();
+  if (action === 'on' || action === 'start' || action === 'run') {
+    _writeFactoryState({ enabled: true, status: 'running', updatedAt: new Date().toISOString() });
+    return `Factory running\n\n${_factoryStatusText()}`;
+  }
+  if (action === 'off' || action === 'pause') {
+    _writeFactoryState({ enabled: false, status: 'paused', updatedAt: new Date().toISOString() });
+    return `Factory paused\n\n${_factoryStatusText()}`;
+  }
+  if (action === 'stop') {
+    _writeFactoryState({ enabled: false, status: 'stopped', updatedAt: new Date().toISOString() });
+    const backlog = _readFactoryBacklog();
+    for (const t of backlog.tickets) {
+      if (t.status === 'doing') {
+        t.status = 'blocked';
+        t.updatedAt = new Date().toISOString();
+      }
+    }
+    _writeFactoryBacklog(backlog);
+    return `Factory stopped. doing ticket -> blocked\n\n${_factoryStatusText()}`;
+  }
+  if (action === 'add') {
+    if (!arg) return '사용: /factory add <ticket title>';
+    const idx = _readProjectIndex();
+    const backlog = _readFactoryBacklog();
+    const id = `fac-${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}`;
+    backlog.tickets.unshift({
+      id,
+      title: arg,
+      status: 'backlog',
+      project: idx.active || 'main',
+      acceptance: '실제 파일/문서/테스트/manifest 중 하나 이상으로 증거를 남긴다.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    _writeFactoryBacklog(backlog);
+    return `Factory ticket added: ${id}\n${arg}`;
+  }
+  return '사용: /factory status | on | pause | stop | add <ticket title>';
+}
+
+function handleOpsCommand(text: string): string | null {
+  const skillPack = handleSkillPackSlashCommand(text);
+  if (skillPack) return skillPack;
+  const project = handleProjectCommand(text);
+  if (project) return project;
+  const factory = handleFactoryCommand(text);
+  if (factory) return factory;
+  return null;
+}
+
 function ensureCompanyStructure(): string {
   const dir = getCompanyDir();
   fs.mkdirSync(path.join(dir, '_shared'), { recursive: true });
@@ -5215,6 +5523,8 @@ function ensureCompanyStructure(): string {
   fs.mkdirSync(path.join(dir, 'approvals', 'pending'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'approvals', 'history'), { recursive: true });
   seedBuiltinSkillPacksIfMissing();
+  seedProjectWorkspaceIfMissing();
+  seedFactoryIfMissing();
   AGENT_ORDER.forEach(id => {
     fs.mkdirSync(path.join(dir, '_agents', id), { recursive: true });
     _seedAgentGoalIfMissing(id);
@@ -5752,6 +6062,14 @@ function readAgentSharedContext(agentId: string, opts?: { lean?: boolean }): str
   if (companyGoals.trim()) ctx += `\n\n[회사 공동 목표]\n${companyGoals.slice(0, 4000)}`;
   if (identity.trim()) ctx += `\n\n[회사 정체성]\n${identity.slice(0, 2000)}`;
   if (decisions.trim()) ctx += `\n\n[지난 의사결정 로그]\n${decisions.slice(lean ? -1200 : -3000)}`;
+  try {
+    const projectCtx = readActiveProjectContext(lean ? 1600 : 3200);
+    if (projectCtx) ctx += projectCtx;
+  } catch { /* never break the prompt */ }
+  try {
+    const factory = _factoryStatusText();
+    if (factory.trim()) ctx += `\n\n[Factory Queue]\n${factory.slice(0, lean ? 1200 : 2200)}`;
+  } catch { /* never break the prompt */ }
   /* Calendar — secretary's google_calendar tool writes upcoming events here.
      Surfaced to every agent so scheduling and time-aware planning work without
      each agent having to call the tool itself. */
@@ -17246,10 +17564,10 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                        모드 force. 사용자가 사이드바 toggle 안 해도 명시적 호출은 항상
                        specialist dispatch 흐름으로 → 매출/키트 shortcut 발동. */
                     const txt = String(msg.value || '');
-                    const skillPackResult = handleSkillPackSlashCommand(txt);
-                    if (skillPackResult) {
+                    const opsResult = handleOpsCommand(txt);
+                    if (opsResult) {
                         try { ensureCompanyStructure(); } catch { /* ignore */ }
-                        this.postSystemNote(skillPackResult, '🧩');
+                        this.postSystemNote(opsResult, '🧩');
                         break;
                     }
                     const hasExplicit = !!this._detectExplicitMention(txt);

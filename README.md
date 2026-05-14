@@ -1,109 +1,301 @@
-<p align="center">
-  <img src="assets/icon.png" width="120" alt="Connect AI Logo" />
-</p>
+# Yum Agent Company
 
-<h1 align="center">Connect AI v2 (P-Reinforce)</h1>
+Personal local AI development company for VS Code/Cursor. It runs a small team of local AI employees that can plan, write files, use tools, keep memory, and move work toward real deliverables.
 
-<p align="center">
-  <strong>100% Local · 100% Offline · Autonomous Knowledge Engine</strong><br/>
-  VS Code / Cursor 확장 프로그램으로, 당신의 낡은 IDE를 최상위 에이전트 대학(A.U)의 심장으로 진화시킵니다.
-</p>
+Current version: `2.95.0`
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-2.1.30-blue" alt="version" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
-  <img src="https://img.shields.io/badge/integration-Agent_University-purple" alt="integration" />
-  <img src="https://img.shields.io/badge/engine-Ollama%20%7C%20LM%20Studio-orange" alt="engine" />
-</p>
+## What It Is
 
----
+Yum Agent Company is moving from "agents answer questions" toward a practical software factory:
 
-UCdLZ0MsYS4hmqFgOYCB6C9w
-connect_ai_lab 유튜버님의 프로젝트를 커스터마이징 하기위해 가져온 페이지.
+- 13 development-company employees: CEO, senior dev, frontend, backend, DevOps, designer, QA, writer, researcher, secretary, junior dev, accountant, lawyer
+- local-first operation through Ollama or LM Studio
+- company memory in `_company/`
+- reusable agent skills in `_agents/<agent>/skills/`
+- bundled tool seeds in `_agents/<agent>/tools/`
+- skill-pack modes such as Caveman and Superpowers
+- project switching and factory queue MVP
 
-## 🌟 Overview: The P-Reinforce Architecture
+## Main Commands
 
-Connect AI v2.1.30은 단순한 코딩 에이전트를 넘어섭니다. **P-Reinforce 아키텍처**를 기반으로 설계된 이 에이전트는 사용자의 모든 정보와 지시를 받아들여 **스스로 의미를 분석하고, 폴더를 생성하고, 마크다운 위키 파일로 정리하여 클라우드에 자동 백업**하는 자율 지식 정원사(Autonomous Gardener)입니다.
+Commands work from Telegram and from the extension chat input unless noted.
 
----
+### Skill Packs
 
-## ⚡ Core Features
+Skill Packs are reusable behavior packs injected into every agent prompt.
 
-### 1. 🧠 Agent University (A.U) 완벽 연동
-Agent University 웹 플랫폼과 실시간으로 통신합니다. 
-웹에서 버튼 한 번 누르는 즉시, 로컬 VS Code의 `4825` 포트를 통해 프리미엄 브레인 팩(Premium Brain Pack) 지식이 로컬 인공지능 뇌(`~/.connect-ai-brain`)에 자동 주입되어 신경망을 확장합니다.
+```text
+/skillpacks
+/superpowers on
+/superpowers off
+/caveman on
+/caveman off
+```
 
-### 2. 📂 자율 지식 구조화 (Zero-Interaction Styling)
-유저가 던져주는 원시 데이터(Raw Data)를 에이전트가 스스로 판단해 `10_Wiki`, `00_Raw`, `🚀 Skills` 와 같은 완벽한 P-Reinforce 템플릿 규격의 Markdown 파일로 분할-조립하여 저장합니다.
+Natural language also works:
 
-### 3. ☁️ 클라우드 동기화 (Auto-Git Sync 100%)
-로컬 PC에서 파일 생성이 일어나는 순간, 에이전트가 스스로 GitHub 저장소에 `git add`, `commit`, `push`를 수행합니다. 
-마스터는 이제 지루한 푸시 커맨드를 입력할 필요가 없습니다.
+```text
+슈퍼파워 적용
+슈퍼파워 꺼
+케이브맨 모드 켜
+케이브맨 꺼
+일반 모드로
+```
 
-### 4. 🔗 설치형 모델 자동 감지 (Dynamic Model Detection)
-Ollama 또는 LM Studio에 설치된 모델을 내부 API(`v1/models`)를 호출하여 자동 감지하고, UI의 스위치 보드(드롭다운)에 연결합니다. 어떤 모델을 쓸지 번거롭게 입력하지 마십시오.
+What they do:
 
----
+- `Superpowers`: planning, systematic debugging, code review, verification-before-completion workflow
+- `Caveman`: terse high-signal response style for token saving
 
-## ⚒️ Agent Capabilities (에이전트 권한)
+Files created:
 
-로컬 머신의 파일 시스템과 터미널에 대한 통제권을 인공지능에게 부여합니다. (100% 안전한 권한 승인 기반)
+```text
+_company/_skillpacks/enabled.json
+_company/_skillpacks/caveman/SKILL.md
+_company/_skillpacks/superpowers/SKILL.md
+```
 
-| Action | Description |
-|:--|:--|
-| **📄 Create Files** | 새로운 파일과 폴더를 생성합니다 |
-| **✏️ Edit Files** | 기존 파일 내의 코드를 수정합니다 |
-| **🗑️ Delete Files** | 불필요한 파일을 즉각 파쇄합니다 |
-| **📖 Read Files** | 마스터의 프로젝트 파일을 읽어 맥락을 파악합니다 |
-| **📂 Browse Directories** | 디렉토리 구조를 분석합니다 |
-| **🖥️ Run Commands** | `npm run build`, `git push` 등 터미널 명령을 수행합니다 |
+### Project Workspace Manager
 
----
+Use this when you want to stop one project, switch to another, or start fresh without mixing context.
 
-## 📥 Installation (설치 방법)
+```text
+/project status
+/project list
+/project create <name>
+/project switch <name>
+/project pause [name]
+/project archive <name>
+```
 
-### A.U 멤버십 유저 (Recommended)
-1. 상단 탭의 [Releases](https://github.com/wonseokjung/connect-ai/releases) 메뉴로 진입.
-2. 최신 `v2.1.30.vsix` 파일을 다운로드.
-3. VS Code 에서 `Cmd+Shift+P` → **Extensions: Install from VSIX** → 다운받은 파일 선택
+Examples:
 
-### 개발자 빌드 (Build from Source)
+```text
+/project create saas-mvp
+/project switch saas-mvp
+/project pause saas-mvp
+/project create game-app
+/project archive old-demo
+```
+
+Files created:
+
+```text
+_company/projects/current.json
+_company/projects/<project>/vision.md
+_company/projects/<project>/architecture.md
+_company/projects/<project>/decision-log.md
+_company/projects/<project>/release-notes.md
+_company/projects/<project>/backlog.json
+_company/projects/<project>/sessions/
+_company/projects/<project>/artifacts/
+```
+
+The active project is injected into every agent prompt so employees focus on the current product instead of mixing old work into new work.
+
+### Factory Queue
+
+Use this when you want the company to behave more like a production line.
+
+```text
+/factory status
+/factory on
+/factory pause
+/factory stop
+/factory add <ticket title>
+```
+
+Examples:
+
+```text
+/factory add Build login page with email/password flow
+/factory add Add README install guide and screenshots section
+/factory on
+/factory status
+/factory pause
+```
+
+Files created:
+
+```text
+_company/factory/state.json
+_company/factory/backlog.json
+```
+
+Factory states:
+
+- `running`: factory mode enabled
+- `paused`: queue preserved, work paused
+- `stopped`: active `doing` tickets are marked `blocked`
+
+Ticket flow target:
+
+```text
+backlog -> doing -> review -> shipped
+```
+
+The MVP stores the queue and injects factory status into agent prompts. Next versions can add timed heartbeat execution and automatic CEO ticket decomposition.
+
+### Existing Work Commands
+
+```text
+/done <id>
+/cancel <id>
+/skill
+/skills [agent_id]
+/approve <id>
+/reject <id>
+/help
+```
+
+What they do:
+
+- `/done`, `/cancel`: close tracked work
+- `/skill`: save the last specialist output as a reusable skill
+- `/skills`: list saved skills
+- `/approve`, `/reject`: approve or reject risky pending actions
+- `/help`: show Telegram command help
+
+## Current Stage
+
+The app can already:
+
+- answer through specialists
+- use agent-specific tools
+- save memories and skills
+- inject Superpowers/Caveman workflow packs
+- keep active project context
+- store a factory queue
+
+This is still not a fully autonomous factory. It is now the foundation: agents can see the current project and the production queue, but timed autonomous production loops still need another layer.
+
+## Factory Roadmap
+
+### 1. Work Queue
+
+Current user requests should become tickets:
+
+```text
+backlog -> doing -> review -> shipped
+```
+
+Needed details per ticket:
+
+- task id
+- assigned employee
+- target deliverable
+- acceptance criteria
+- evidence path
+- current status
+
+Primary file:
+
+```text
+_company/factory/backlog.json
+```
+
+### 2. Deliverable Criteria
+
+"I worked on it" is not enough. A ticket should only move forward when there is evidence:
+
+- changed files
+- generated app/code/document
+- test or compile result
+- session manifest
+- QA note
+
+Target evidence:
+
+```text
+_company/projects/<project>/sessions/<run>/manifest.json
+```
+
+### 3. Shift Loop
+
+Factory mode needs a heartbeat:
+
+- CEO checks queue every N minutes
+- idle employees pick next valuable ticket
+- blocked work gets reassigned
+- daily report summarizes shipped/blocked/next work
+
+Suggested commands:
+
+```text
+/factory on
+/factory pause
+/factory status
+```
+
+### 4. Review Gate
+
+Quality control prevents junk output.
+
+Suggested gate:
+
+```text
+senior_dev review -> qa test -> shipped
+```
+
+Optional specialist gates:
+
+- lawyer: policy/legal risk
+- accountant: pricing/cost/revenue logic
+- devops: deployment risk
+
+### 5. Product Memory
+
+Agents need stable product direction:
+
+```text
+_company/projects/<project>/vision.md
+_company/projects/<project>/roadmap.md
+_company/projects/<project>/architecture.md
+_company/projects/<project>/decision-log.md
+_company/projects/<project>/release-notes.md
+```
+
+## Recommended Next MVP
+
+Project Workspace Manager is now started:
+
+```text
+/project create <name>
+/project switch <name>
+/project pause
+/project status
+/project archive <name>
+```
+
+Next build target:
+
+- `/factory tick`: run one production step from the active project queue
+- CEO decomposes vague work into 3-7 small tickets
+- assigned agent works one ticket
+- QA writes review result
+- shipped tickets update release notes
+
+## Build
+
 ```bash
-git clone https://github.com/wonseokjung/connect-ai.git
-cd connect-ai
 npm install
 npm run compile
-npx vsce package
+npm run test:permission
+npm run test:guard
 ```
 
----
+Windows VSIX build:
 
-## ⚙️ Engine Setup (엔진 설정 방법)
-
-### ✅ LM Studio (Apple Silicon, Windows) - 권장
-1. [lmstudio.ai](https://lmstudio.ai/) 에서 설치
-2. Gemma 3, Llama 3 또는 Qwen Coder 등 원하는 모델 로드
-3. **Developer 탭(좌측 `<>` 메뉴)** 진입 후 **Start Server** 클릭
-4. Connect AI의 ⚙️ 채팅방 설정에서 엔진을 "LM Studio"로 선택 (자동 모델 인덱싱 완료)
-
-### ✅ Ollama (Mac, Linux)
-```bash
-brew install ollama
-ollama pull gemma3   # 원하는 모델 풀링
+```powershell
+./build.ps1
 ```
-Connect AI에서 설정만 "Ollama"로 바꿔주시면 끝납니다.
 
----
+or double-click:
 
-## 🔒 Privacy (완벽한 보안)
+```text
+build.bat
+```
 
-- **Zero Cloud API:** 당신의 코드는 외부 클라우드 통신망을 타지 않습니다.
-- **Zero Telemetry:** 모든 연산력은 100% Local Inference 환경에서 이루어집니다.
-- 기업 보안 등급에 준하는 극강의 밀폐형 로컬 지식망 생성을 보장합니다.
+## Privacy
 
----
-
-<p align="center">
-  <strong>Built for Antigravity & Agent University</strong><br/>
-  Designed by <a href="https://github.com/wonseokjung">Jay</a> × Connect AI Architect
-</p>
+The extension is local-first. It uses your configured local model server such as Ollama or LM Studio. Company memory, projects, factory queue, skills, and tool configs live on your machine under the configured company/brain folder.
