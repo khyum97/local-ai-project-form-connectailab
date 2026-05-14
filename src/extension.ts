@@ -1977,7 +1977,7 @@ const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대�
 \`/caveman on|off\` — terse 응답 모드 토글
 \`/superpowers on|off\` — 계획·디버깅·검증 워크플로우 토글
 \`/project status|list|create|switch|pause|archive\` — 프로젝트 전환/중지/보관
-\`/factory status|on|pause|stop|add\` — 작업 공장 큐 상태/가동/정지/티켓 추가
+\`/factory status|on|pause|stop|tick|add\` — 작업 공장 큐 상태/가동/정지/한 스텝 실행/티켓 추가
 \`/help\` — 이 도움말`;
 
 const AUTONOMY_LABELS: Record<number, string> = {
@@ -2044,6 +2044,14 @@ async function handleTelegramCommand(text: string): Promise<void> {
 
     if (cmd === '/help' || cmd === '/start') {
         await sendTelegramReport(TELEGRAM_HELP);
+        return;
+    }
+    if (/^\/factory\s+tick\b/i.test(trimmed)) {
+        const tick = startFactoryTick();
+        await sendTelegramReport(tick.message);
+        if (tick.prompt) {
+            _activeChatProvider?.sendPromptFromExtension?.(tick.prompt, { fromTelegram: true, corporate: true });
+        }
         return;
     }
     const opsResult = handleOpsCommand(trimmed);
@@ -5239,6 +5247,8 @@ interface FactoryTicket {
   owner?: string;
   acceptance?: string;
   project?: string;
+  evidence?: string;
+  sessionDir?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -5456,6 +5466,73 @@ function _factoryStatusText(): string {
   return `Factory Status\n\nstate: ${state.status}\nenabled: ${state.enabled}\n${counts}\n\n${next}`;
 }
 
+function startFactoryTick(): { message: string; prompt?: string } {
+  seedFactoryIfMissing();
+  seedProjectWorkspaceIfMissing();
+  const state = _readFactoryState();
+  const backlog = _readFactoryBacklog();
+  const idx = _readProjectIndex();
+  const activeProject = idx.active || 'main';
+  const ticket = backlog.tickets.find(t => t.status === 'backlog' && (!t.project || t.project === activeProject))
+    || backlog.tickets.find(t => t.status === 'blocked' && (!t.project || t.project === activeProject))
+    || backlog.tickets.find(t => t.status === 'backlog')
+    || backlog.tickets.find(t => t.status === 'blocked');
+  if (!ticket) {
+    return { message: `Factory tick: open ticket 없음\n\n${_factoryStatusText()}` };
+  }
+  ticket.status = 'doing';
+  ticket.owner = ticket.owner || 'ceo';
+  ticket.project = ticket.project || activeProject;
+  ticket.updatedAt = new Date().toISOString();
+  _writeFactoryBacklog(backlog);
+  if (!state.enabled || state.status !== 'running') {
+    _writeFactoryState({ enabled: true, status: 'running', updatedAt: new Date().toISOString() });
+  }
+  const project = idx.projects[ticket.project || activeProject];
+  const projectName = project?.name || ticket.project || activeProject;
+  const prompt = `[FACTORY_TICKET:${ticket.id}]
+당신은 Yum Agent Company의 CEO입니다. Factory Queue에서 다음 티켓 1개를 실제 결과물로 진행하세요.
+
+## Active Project
+- slug: ${ticket.project || activeProject}
+- name: ${projectName}
+
+## Ticket
+- id: ${ticket.id}
+- title: ${ticket.title}
+- acceptance: ${ticket.acceptance || '실제 파일/문서/테스트/manifest 중 하나 이상으로 증거를 남긴다.'}
+
+## Required Factory Behavior
+1. 이 티켓을 작게 분해하고 필요한 직원에게만 배정하세요.
+2. 말뿐인 보고 금지. 가능한 경우 실제 파일, 코드, 문서, 테스트, 설정 중 하나를 만들거나 수정하세요.
+3. QA 또는 senior_dev가 결과를 검토하게 하세요.
+4. 최종 보고서에 changed files, 검증 명령, 실패/미완료 이유, 다음 티켓 후보를 적으세요.
+5. 현재 활성 프로젝트 컨텍스트만 기준으로 작업하세요. 다른 프로젝트와 섞지 마세요.`;
+  return { message: `Factory tick started\n\n- ${ticket.id}\n- ${ticket.title}`, prompt };
+}
+
+function completeFactoryTicketFromPrompt(prompt: string, sessionDir: string, finalReport: string) {
+  try {
+    const m = prompt.match(/\[FACTORY_TICKET:([^\]\s]+)\]/);
+    if (!m) return;
+    const id = m[1];
+    const backlog = _readFactoryBacklog();
+    const ticket = backlog.tickets.find(t => t.id === id);
+    if (!ticket) return;
+    ticket.status = 'review';
+    ticket.sessionDir = sessionDir;
+    ticket.evidence = `sessions/${path.basename(sessionDir)}/_manifest.json`;
+    ticket.updatedAt = new Date().toISOString();
+    _writeFactoryBacklog(backlog);
+    const projectSlug = ticket.project || _readProjectIndex().active;
+    if (projectSlug) {
+      const p = path.join(_projectDir(projectSlug), 'decision-log.md');
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.appendFileSync(p, `\n## [${new Date().toISOString()}] Factory ticket ${id}\n- ${ticket.title}\n- status: review\n- evidence: ${ticket.evidence}\n- summary: ${finalReport.replace(/\s+/g, ' ').slice(0, 300)}\n`);
+    }
+  } catch { /* never break dispatch completion */ }
+}
+
 function handleFactoryCommand(text: string): string | null {
   const trimmed = text.trim();
   const m = trimmed.match(/^\/factory(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
@@ -5465,6 +5542,7 @@ function handleFactoryCommand(text: string): string | null {
   const action = (m[1] || 'status').toLowerCase();
   const arg = (m[2] || '').trim();
   if (action === 'status') return _factoryStatusText();
+  if (action === 'tick') return startFactoryTick().message;
   if (action === 'on' || action === 'start' || action === 'run') {
     _writeFactoryState({ enabled: true, status: 'running', updatedAt: new Date().toISOString() });
     return `Factory running\n\n${_factoryStatusText()}`;
@@ -5502,7 +5580,7 @@ function handleFactoryCommand(text: string): string | null {
     _writeFactoryBacklog(backlog);
     return `Factory ticket added: ${id}\n${arg}`;
   }
-  return '사용: /factory status | on | pause | stop | add <ticket title>';
+  return '사용: /factory status | on | pause | stop | tick | add <ticket title>';
 }
 
 function handleOpsCommand(text: string): string | null {
@@ -17564,6 +17642,20 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                        모드 force. 사용자가 사이드바 toggle 안 해도 명시적 호출은 항상
                        specialist dispatch 흐름으로 → 매출/키트 shortcut 발동. */
                     const txt = String(msg.value || '');
+                    if (/^\/factory\s+tick\b/i.test(txt.trim())) {
+                        const tick = startFactoryTick();
+                        this.postSystemNote(tick.message, '🏭');
+                        if (tick.prompt) {
+                            const model = msg.model || this.getDefaultModel();
+                            if (!model) {
+                                webviewView.webview.postMessage({ type: 'error', value: '⚠️ 기본 모델이 설정되지 않았어요.' });
+                                break;
+                            }
+                            this._sidebarCorpModeOn = true;
+                            await this._handleCorporatePrompt(tick.prompt, model);
+                        }
+                        break;
+                    }
                     const opsResult = handleOpsCommand(txt);
                     if (opsResult) {
                         try { ensureCompanyStructure(); } catch { /* ignore */ }
@@ -21253,6 +21345,7 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                that the CEO has wrapped up. Lets the user see "✅ 다음 영상
                컨셉 뽑기" without manual /done. */
             try { autoMarkTrackerFromDispatch(plan, sessionDir, finalReport); } catch { /* ignore */ }
+            try { completeFactoryTicketFromPrompt(prompt, sessionDir, finalReport); } catch { /* ignore */ }
             /* Refresh unified schedule so the next cycle's agents see the
                freshly-completed work in their context. */
             try { rebuildUnifiedSchedule(); } catch { /* ignore */ }

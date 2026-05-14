@@ -7,12 +7,13 @@
 버전 체계: `2.MINOR.PATCH`
 - PATCH (+1): 단일 파일 소규모 수정, 버그 수정, 텍스트 변경
 - MINOR (+1, PATCH 리셋): 새 에이전트 추가, 새 기능, 구조적 변경
-- 현재 버전: **2.95.0**
+- 현재 버전: **2.96.0**
 
 ### 변경 이력
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| 2.96.0 | 2026-05-15 | Factory Queue `/factory tick` 실행 추가; 첫 backlog 티켓을 CEO 디스패치로 보내고 evidence 기록 |
 | 2.95.0 | 2026-05-15 | Project Workspace Manager와 Factory Queue MVP 추가; 자연어 Skill Pack 토글 및 README 명령어 정리 |
 | 2.94.0 | 2026-05-15 | Skill Pack Manager MVP 추가; Caveman/Superpowers pack을 회사 에이전트 prompt에 토글 주입 |
 | 2.93.0 | 2026-05-15 | 13명 개발회사 UI·라우팅·툴 카탈로그 정렬; 새 개발팀 tool-seeds와 빌드/권한 예시 정리 |
