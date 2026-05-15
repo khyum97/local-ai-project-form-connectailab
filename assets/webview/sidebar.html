@@ -243,6 +243,19 @@ textarea::placeholder{color:var(--text-dim)}
 .input-footer{display:flex;align-items:center;justify-content:space-between}
 .input-hint{font-size:10px;color:var(--text-dim)}
 .input-btns{display:flex;gap:5px}
+.cmd-panel{position:absolute;right:12px;bottom:58px;width:min(360px,calc(100vw - 28px));max-height:420px;background:rgba(8,12,10,.98);border:1px solid rgba(0,255,65,.22);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.55),0 0 28px rgba(0,255,65,.12);z-index:30;overflow:hidden;display:none}
+.cmd-panel.open{display:block}
+.cmd-panel-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+.cmd-panel-title{font-size:12px;color:var(--text-bright);font-weight:700}
+.cmd-panel-sub{font-size:10px;color:var(--text-dim);margin-top:2px}
+.cmd-panel-close{background:transparent;border:none;color:var(--text-dim);font-size:14px;cursor:pointer}
+.cmd-list{max-height:360px;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px}
+.cmd-card{width:100%;text-align:left;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:9px 10px;cursor:pointer;color:var(--text);font-family:inherit;transition:all .15s}
+.cmd-card:hover{border-color:rgba(0,255,65,.35);background:rgba(0,255,65,.07);transform:translateY(-1px)}
+.cmd-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cmd-card-code{font-family:'SF Mono','Consolas',monospace;font-size:12px;color:var(--accent)}
+.cmd-card-group{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em}
+.cmd-card-desc{font-size:11px;color:var(--text-dim);line-height:1.4;margin-top:4px}
 .send-btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;width:32px;height:32px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s;box-shadow:0 2px 12px rgba(124,106,255,.35);position:relative;overflow:hidden}
 .send-btn::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent,rgba(255,255,255,.15));opacity:0;transition:opacity .3s}
 .send-btn:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 6px 24px rgba(124,106,255,.45)}
@@ -1386,8 +1399,8 @@ body.corp-on .agent-dock::before{
 <div class="input-wrap"><div class="input-box">
 <div class="attach-preview" id="attachPreview"></div>
 <textarea id="input" rows="1" placeholder="무엇을 만들어 드릴까요?"></textarea>
-<div class="input-footer"><span class="input-hint">Enter 전송 · Shift+Enter 줄바꿈</span>
-<div class="input-btns"><button class="attach-btn" id="attachBtn" title="파일 첨부 (AI에게 보여주기)">+</button><button class="attach-btn" id="injectLocalBtn" title="첨부 파일을 내 지식에 영구 저장">⚡</button><button class="stop-btn" id="stopBtn" title="생성 중단">■</button><button class="send-btn" id="sendBtn" title="전송 (Enter)">↑</button></div></div></div>
+<div class="input-footer"><span class="input-hint">Enter 전송 · Shift+Enter 줄바꿈 · / 명령어</span>
+<div class="input-btns"><button class="attach-btn" id="cmdMenuBtn" title="명령어 카드 열기">/</button><button class="attach-btn" id="attachBtn" title="파일 첨부 (AI에게 보여주기)">+</button><button class="attach-btn" id="injectLocalBtn" title="첨부 파일을 내 지식에 영구 저장">⚡</button><button class="stop-btn" id="stopBtn" title="생성 중단">■</button><button class="send-btn" id="sendBtn" title="전송 (Enter)">↑</button></div></div></div>
 <input type="file" id="fileInput" multiple accept="image/*,audio/*,.txt,.md,.csv,.json,.js,.ts,.html,.css,.py,.java,.rs,.go,.yaml,.yml,.xml,.toml" hidden></div>
 </div>
 <script>
@@ -1401,7 +1414,7 @@ try {
 const vscode=acquireVsCodeApi(),chat=document.getElementById('chat'),input=document.getElementById('input'),
 sendBtn=document.getElementById('sendBtn'),stopBtn=document.getElementById('stopBtn'),
 modelSel=document.getElementById('modelSel'),newChatBtn=document.getElementById('newChatBtn'),settingsBtn=document.getElementById('settingsBtn'),brainBtn=document.getElementById('brainBtn'),thinkingBtn=document.getElementById('thinkingBtn'),
-internetBtn=document.getElementById('internetBtn'),attachBtn=document.getElementById('attachBtn'),injectLocalBtn=document.getElementById('injectLocalBtn'),fileInput=document.getElementById('fileInput'),attachPreview=document.getElementById('attachPreview'),
+internetBtn=document.getElementById('internetBtn'),cmdMenuBtn=document.getElementById('cmdMenuBtn'),attachBtn=document.getElementById('attachBtn'),injectLocalBtn=document.getElementById('injectLocalBtn'),fileInput=document.getElementById('fileInput'),attachPreview=document.getElementById('attachPreview'),
 thinkingBar=document.getElementById('thinkingBar'),corporateBtn=document.getElementById('corporateBtn'),agentBoard=document.getElementById('agentBoard'),abGrid=document.getElementById('abGrid'),abSvg=document.getElementById('abSvg'),abFolder=document.getElementById('abFolder'),abCompanyName=document.getElementById('abCompanyName'),abFolderText=document.getElementById('abFolderText'),brandSuffix=document.getElementById('brandSuffix');
 let loader=null,sending=false,pendingFiles=[],internetEnabled=false,corporateMode=false,officeOpen=false;
 /* Smart auto-scroll: only stick to the bottom if the user is already near it.
@@ -1970,6 +1983,76 @@ function send(opts){
     vscode.postMessage({type:'prompt',value:text,model:modelSel.value,internet:internetEnabled,corporate:corp});
   }
 }
+
+/* Command cards — keep every slash command here when adding new commands. */
+const COMMAND_CARDS = [
+  { group:'Skill Packs', cmd:'/skillpacks', desc:'Caveman/Superpowers 적용 상태 보기' },
+  { group:'Skill Packs', cmd:'/superpowers on', desc:'계획·디버깅·검증 워크플로우 적용' },
+  { group:'Skill Packs', cmd:'/superpowers off', desc:'Superpowers 워크플로우 해제' },
+  { group:'Skill Packs', cmd:'/caveman on', desc:'짧고 고밀도 응답 모드 적용' },
+  { group:'Skill Packs', cmd:'/caveman off', desc:'Caveman 응답 모드 해제' },
+  { group:'Project', cmd:'/project status', desc:'현재 활성 프로젝트와 목록 확인' },
+  { group:'Project', cmd:'/project create ', desc:'새 프로젝트 생성 후 전환' },
+  { group:'Project', cmd:'/project switch ', desc:'기존 프로젝트로 전환' },
+  { group:'Project', cmd:'/project pause', desc:'현재 프로젝트 일시 중지' },
+  { group:'Project', cmd:'/project archive ', desc:'프로젝트를 archive로 보관' },
+  { group:'Factory', cmd:'/factory status', desc:'공장 큐 상태 확인' },
+  { group:'Factory', cmd:'/factory auto', desc:'상시 생산 루프 켜기' },
+  { group:'Factory', cmd:'/factory pause', desc:'공장 큐 보존하고 일시정지' },
+  { group:'Factory', cmd:'/factory stop', desc:'실행 중 티켓을 blocked 처리하고 정지' },
+  { group:'Factory', cmd:'/factory seed', desc:'빈 큐에 기본 생산 티켓 생성' },
+  { group:'Factory', cmd:'/factory tick', desc:'큐에서 티켓 1개 실행' },
+  { group:'Factory', cmd:'/factory review', desc:'review 티켓을 shipped/blocked로 검수' },
+  { group:'Factory', cmd:'/factory add ', desc:'새 공장 티켓 추가' },
+  { group:'Work', cmd:'/done ', desc:'작업 id 완료 처리' },
+  { group:'Work', cmd:'/cancel ', desc:'작업 id 취소 처리' },
+  { group:'Skills', cmd:'/skill', desc:'직전 산출물을 재사용 스킬로 저장' },
+  { group:'Skills', cmd:'/skills ', desc:'에이전트별 저장 스킬 목록 보기' },
+  { group:'Approval', cmd:'/approve ', desc:'위험 작업 승인' },
+  { group:'Approval', cmd:'/reject ', desc:'위험 작업 거절' },
+  { group:'Help', cmd:'/help', desc:'도움말 보기' },
+];
+let _cmdPanel = null;
+function ensureCommandPanel(){
+  if (_cmdPanel) return _cmdPanel;
+  const panel = document.createElement('div');
+  panel.className = 'cmd-panel';
+  panel.id = 'cmdPanel';
+  panel.innerHTML =
+    '<div class="cmd-panel-head"><div><div class="cmd-panel-title">명령어</div><div class="cmd-panel-sub">카드 클릭 → 입력창 삽입 → Enter</div></div><button class="cmd-panel-close" id="cmdPanelClose" title="닫기">×</button></div>'+
+    '<div class="cmd-list" id="cmdList"></div>';
+  const box = document.querySelector('.input-box');
+  (box || document.body).appendChild(panel);
+  const list = panel.querySelector('#cmdList');
+  COMMAND_CARDS.forEach(c=>{
+    const btn = document.createElement('button');
+    btn.className = 'cmd-card';
+    btn.type = 'button';
+    btn.innerHTML = '<div class="cmd-card-top"><span class="cmd-card-code">'+esc(c.cmd)+'</span><span class="cmd-card-group">'+esc(c.group)+'</span></div><div class="cmd-card-desc">'+esc(c.desc)+'</div>';
+    btn.addEventListener('click',()=>{
+      input.value = c.cmd;
+      input.focus();
+      input.selectionStart = input.selectionEnd = input.value.length;
+      input.dispatchEvent(new Event('input'));
+      closeCommandPanel();
+    });
+    list.appendChild(btn);
+  });
+  panel.querySelector('#cmdPanelClose').addEventListener('click', closeCommandPanel);
+  _cmdPanel = panel;
+  return panel;
+}
+function openCommandPanel(){ ensureCommandPanel().classList.add('open'); }
+function closeCommandPanel(){ if(_cmdPanel) _cmdPanel.classList.remove('open'); }
+function toggleCommandPanel(){ const p=ensureCommandPanel(); p.classList.toggle('open'); }
+if(cmdMenuBtn) cmdMenuBtn.addEventListener('click',(e)=>{ e.stopPropagation(); toggleCommandPanel(); });
+input.addEventListener('input',()=>{ if(input.value.trim()==='/') openCommandPanel(); });
+document.addEventListener('click',(e)=>{
+  if(_cmdPanel && _cmdPanel.classList.contains('open') && !_cmdPanel.contains(e.target) && e.target!==cmdMenuBtn){
+    closeCommandPanel();
+  }
+});
+input.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCommandPanel(); });
 
 /* Attachment Logic */
 attachBtn.addEventListener('click',()=>fileInput.click());

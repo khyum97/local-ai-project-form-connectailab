@@ -2,7 +2,7 @@
 
 Personal local AI development company for VS Code/Cursor. It runs a small team of local AI employees that can plan, write files, use tools, keep memory, and move work toward real deliverables.
 
-Current version: `2.99.0`
+Current version: `2.100.0`
 
 ## What It Is
 
@@ -19,6 +19,8 @@ Yum Agent Company is moving from "agents answer questions" toward a practical so
 ## Main Commands
 
 Commands work from Telegram and from the extension chat input unless noted.
+
+In the extension chat input, press the `/` command button or type `/` to open command cards. Click a card to insert the command into the input, then press Enter. New slash commands should be added to the sidebar `COMMAND_CARDS` registry so they stay visible in this panel.
 
 ### Skill Packs
 
