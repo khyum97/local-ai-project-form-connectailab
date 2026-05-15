@@ -1977,7 +1977,7 @@ const TELEGRAM_HELP = `🤖 *Yum Agent Company 봇* — 비서가 24시간 대�
 \`/caveman on|off\` — terse 응답 모드 토글
 \`/superpowers on|off\` — 계획·디버깅·검증 워크플로우 토글
 \`/project status|list|create|switch|pause|archive\` — 프로젝트 전환/중지/보관
-\`/factory status|on|pause|stop|tick|review|add\` — 작업 공장 큐 상태/가동/정지/한 스텝 실행/검수/티켓 추가
+\`/factory status|on|auto|pause|stop|seed|tick|review|add\` — 작업 공장 큐 상태/가동/자동루프/정지/티켓생성/실행/검수/추가
 \`/help\` — 이 도움말`;
 
 const AUTONOMY_LABELS: Record<number, string> = {
@@ -5368,6 +5368,27 @@ function _writeFactoryBacklog(backlog: { tickets: FactoryTicket[] }) {
   fs.writeFileSync(_factoryBacklogPath(), JSON.stringify(backlog, null, 2));
 }
 
+function addFactoryTicket(title: string, opts?: { owner?: string; project?: string; acceptance?: string }): FactoryTicket {
+  seedFactoryIfMissing();
+  seedProjectWorkspaceIfMissing();
+  const idx = _readProjectIndex();
+  const backlog = _readFactoryBacklog();
+  const id = `fac-${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}`;
+  const ticket: FactoryTicket = {
+    id,
+    title,
+    status: 'backlog',
+    owner: opts?.owner,
+    project: opts?.project || idx.active || 'main',
+    acceptance: opts?.acceptance || '실제 파일/문서/테스트/manifest 중 하나 이상으로 증거를 남긴다.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  backlog.tickets.unshift(ticket);
+  _writeFactoryBacklog(backlog);
+  return ticket;
+}
+
 function readActiveProjectContext(maxChars = 3200): string {
   const idx = _readProjectIndex();
   const active = idx.active;
@@ -5580,6 +5601,42 @@ function reviewFactoryTickets(): string {
   return `Factory review complete\n\n${lines.join('\n')}\n\n${_factoryStatusText()}`;
 }
 
+function seedFactoryTickets(): string {
+  seedFactoryIfMissing();
+  seedProjectWorkspaceIfMissing();
+  const idx = _readProjectIndex();
+  const active = idx.active || 'main';
+  const project = idx.projects[active];
+  const backlog = _readFactoryBacklog();
+  const open = backlog.tickets.filter(t => t.status !== 'shipped' && t.status !== 'blocked');
+  if (open.length > 0) return `Factory seed skipped: open ticket ${open.length}개 있음\n\n${_factoryStatusText()}`;
+  const projectDir = _projectDir(active);
+  const vision = _safeReadText(path.join(projectDir, 'vision.md')).replace(/\s+/g, ' ').slice(0, 180);
+  const base = project?.name || active;
+  const tickets = [
+    addFactoryTicket(`${base}: define next smallest shippable product slice`, {
+      owner: 'ceo',
+      project: active,
+      acceptance: '제품 목표를 1개 작은 산출물로 분해하고 project backlog/decision-log에 기록한다.',
+    }),
+    addFactoryTicket(`${base}: inspect current repo and identify one buildable improvement`, {
+      owner: 'senior_dev',
+      project: active,
+      acceptance: '현재 코드/문서 기준 즉시 만들 수 있는 개선 1개와 검증 방법을 기록한다.',
+    }),
+    addFactoryTicket(`${base}: create or update user-facing documentation`, {
+      owner: 'writer',
+      project: active,
+      acceptance: 'README 또는 project 문서에 실제 사용자가 다음 행동을 알 수 있게 갱신한다.',
+    }),
+  ];
+  const hintPath = path.join(projectDir, 'backlog.json');
+  try {
+    fs.writeFileSync(hintPath, JSON.stringify({ seededAt: new Date().toISOString(), project: active, vision, factoryTickets: tickets.map(t => t.id) }, null, 2));
+  } catch { /* ignore */ }
+  return `Factory seed added ${tickets.length} tickets\n\n${tickets.map(t => `- ${t.id.slice(-8)} ${t.title}`).join('\n')}`;
+}
+
 function handleFactoryCommand(text: string): string | null {
   const trimmed = text.trim();
   const m = trimmed.match(/^\/factory(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
@@ -5590,10 +5647,11 @@ function handleFactoryCommand(text: string): string | null {
   const arg = (m[2] || '').trim();
   if (action === 'status') return _factoryStatusText();
   if (action === 'review') return reviewFactoryTickets();
+  if (action === 'seed') return seedFactoryTickets();
   if (action === 'tick') return startFactoryTick().message;
-  if (action === 'on' || action === 'start' || action === 'run') {
+  if (action === 'on' || action === 'start' || action === 'run' || action === 'auto') {
     _writeFactoryState({ enabled: true, status: 'running', updatedAt: new Date().toISOString() });
-    return `Factory running\n\n${_factoryStatusText()}`;
+    return `${action === 'auto' ? 'Factory auto loop armed' : 'Factory running'}\n\n${_factoryStatusText()}`;
   }
   if (action === 'off' || action === 'pause') {
     _writeFactoryState({ enabled: false, status: 'paused', updatedAt: new Date().toISOString() });
@@ -5613,22 +5671,10 @@ function handleFactoryCommand(text: string): string | null {
   }
   if (action === 'add') {
     if (!arg) return '사용: /factory add <ticket title>';
-    const idx = _readProjectIndex();
-    const backlog = _readFactoryBacklog();
-    const id = `fac-${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}`;
-    backlog.tickets.unshift({
-      id,
-      title: arg,
-      status: 'backlog',
-      project: idx.active || 'main',
-      acceptance: '실제 파일/문서/테스트/manifest 중 하나 이상으로 증거를 남긴다.',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    _writeFactoryBacklog(backlog);
-    return `Factory ticket added: ${id}\n${arg}`;
+    const ticket = addFactoryTicket(arg);
+    return `Factory ticket added: ${ticket.id}\n${arg}`;
   }
-  return '사용: /factory status | on | pause | stop | tick | review | add <ticket title>';
+  return '사용: /factory status | on | auto | pause | stop | seed | tick | review | add <ticket title>';
 }
 
 function handleOpsCommand(text: string): string | null {
@@ -8692,6 +8738,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 24시간 ON의 진짜 의미: idle 여부와 상관없이 15분마다 CEO 사이클.
     // 사이드바 1인 기업 모드(👔) ON/OFF와도 무관 — 백그라운드에서 계속 일함.
     provider.startAutoCycle(15, 0);
+    provider.startFactoryAutoLoop(5);
 
     // Telegram bidirectional bot — quietly idles when token/chat_id missing,
     // self-activates as soon as the user fills config.md.
@@ -13296,6 +13343,7 @@ async function fetchYouTubeAnalyticsSummary(): Promise<any> {
 
 export function deactivate() {
     try { _activeChatProvider?.stopAutoCycle?.(); } catch { /* ignore */ }
+    try { _activeChatProvider?.stopFactoryAutoLoop?.(); } catch { /* ignore */ }
     try { stopTelegramPolling(); } catch { /* ignore */ }
     try { stopTrackerNudge(); } catch { /* ignore */ }
     try { stopDailyBriefingLoop(); } catch { /* ignore */ }
@@ -16567,6 +16615,8 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
     private _lastUserActivityTs: number = Date.now();
     private _autoCycleTimer?: NodeJS.Timeout;
     private _autoCycleRunning: boolean = false;
+    private _factoryAutoTimer?: NodeJS.Timeout;
+    private _factoryAutoRunning: boolean = false;
 
     // 🎬 Thinking Mode — live cinematic graph that visualises AI reasoning
     private _thinkingMode: boolean = false;
@@ -16772,6 +16822,40 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
     }
     public stopAutoCycle() {
         if (this._autoCycleTimer) { clearInterval(this._autoCycleTimer); this._autoCycleTimer = undefined; }
+    }
+    public startFactoryAutoLoop(intervalMin: number = 5) {
+        this.stopFactoryAutoLoop();
+        const intervalMs = Math.max(1, intervalMin) * 60 * 1000;
+        this._factoryAutoTimer = setInterval(() => {
+            this._tryFactoryAuto().catch(() => { /* silent */ });
+        }, intervalMs);
+    }
+    public stopFactoryAutoLoop() {
+        if (this._factoryAutoTimer) { clearInterval(this._factoryAutoTimer); this._factoryAutoTimer = undefined; }
+    }
+    private async _tryFactoryAuto() {
+        if (this._factoryAutoRunning) return;
+        this._factoryAutoRunning = true;
+        try {
+            if (!isCompanyConfigured()) return;
+            const state = _readFactoryState();
+            if (!state.enabled || state.status !== 'running') return;
+            const snap = this.getDispatchSnapshot();
+            if (snap.current || snap.queueLength > 0) return;
+            const model = this.getDefaultModel();
+            if (!model) return;
+            try { reviewFactoryTickets(); } catch { /* ignore */ }
+            try {
+                const open = _readFactoryBacklog().tickets.filter(t => t.status === 'backlog' || t.status === 'blocked');
+                if (open.length === 0) seedFactoryTickets();
+            } catch { /* ignore */ }
+            const tick = startFactoryTick();
+            if (!tick.prompt) return;
+            this.enqueueDispatch(tick.prompt, model, 'auto', false);
+            try { this.postSystemNote(tick.message, '🏭'); } catch { /* ignore */ }
+        } finally {
+            this._factoryAutoRunning = false;
+        }
     }
     private async _tryAutoCycle(idleMs: number) {
         // 24h ON은 idle 게이트 없이 돌아가는 게 정상 — idleMs가 0이면 이 검사 skip.

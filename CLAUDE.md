@@ -7,12 +7,14 @@
 버전 체계: `2.MINOR.PATCH`
 - PATCH (+1): 단일 파일 소규모 수정, 버그 수정, 텍스트 변경
 - MINOR (+1, PATCH 리셋): 새 에이전트 추가, 새 기능, 구조적 변경
-- 현재 버전: **2.97.0**
+- 현재 버전: **2.99.0**
 
 ### 변경 이력
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| 2.99.0 | 2026-05-15 | Factory Queue `/factory seed` 추가; 빈 큐일 때 활성 프로젝트 기반 기본 생산 티켓 생성 |
+| 2.98.0 | 2026-05-15 | Factory Queue `/factory auto` 상시 루프 추가; running 상태에서 review 후 tick 자동 enqueue |
 | 2.97.0 | 2026-05-15 | Factory Queue `/factory review` 추가; evidence 있는 review 티켓을 shipped로 승격하고 부족하면 blocked 처리 |
 | 2.96.0 | 2026-05-15 | Factory Queue `/factory tick` 실행 추가; 첫 backlog 티켓을 CEO 디스패치로 보내고 evidence 기록 |
 | 2.95.0 | 2026-05-15 | Project Workspace Manager와 Factory Queue MVP 추가; 자연어 Skill Pack 토글 및 README 명령어 정리 |

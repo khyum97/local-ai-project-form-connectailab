@@ -2,7 +2,7 @@
 
 Personal local AI development company for VS Code/Cursor. It runs a small team of local AI employees that can plan, write files, use tools, keep memory, and move work toward real deliverables.
 
-Current version: `2.97.0`
+Current version: `2.99.0`
 
 ## What It Is
 
@@ -100,8 +100,10 @@ Use this when you want the company to behave more like a production line.
 ```text
 /factory status
 /factory on
+/factory auto
 /factory pause
 /factory stop
+/factory seed
 /factory tick
 /factory review
 /factory add <ticket title>
@@ -112,7 +114,8 @@ Examples:
 ```text
 /factory add Build login page with email/password flow
 /factory add Add README install guide and screenshots section
-/factory on
+/factory auto
+/factory seed
 /factory tick
 /factory review
 /factory status
@@ -131,6 +134,8 @@ Factory states:
 - `running`: factory mode enabled
 - `paused`: queue preserved, work paused
 - `stopped`: active `doing` tickets are marked `blocked`
+
+`/factory auto` sets the factory to `running`. While the extension is active, a 5-minute loop checks the queue. If no dispatch is running, it reviews completed tickets first, seeds a few starter tickets when the queue is empty, then runs one backlog ticket with `/factory tick`.
 
 Ticket flow target:
 
@@ -273,8 +278,8 @@ Project Workspace Manager is now started:
 
 Next build target:
 
-- `/factory auto`: timed heartbeat calls `/factory tick` while factory is running
 - LLM QA review: QA/senior_dev reads the manifest and final report before shipping
+- smarter backlog generation: CEO creates custom tickets from project vision when the queue is empty
 - CEO decomposes vague work into 3-7 small tickets when backlog is empty
 - shipped tickets update project release notes
 
