@@ -13487,6 +13487,8 @@ class OfficePanel {
                             } else {
                                 try { panel.webview.postMessage({ type: 'error', value: '⚠️ 기본 모델이 설정되지 않았어요.' }); } catch {}
                             }
+                        } else {
+                            try { panel.webview.postMessage({ type: 'streamEnd' }); } catch {}
                         }
                         break;
                     }
@@ -13494,6 +13496,7 @@ class OfficePanel {
                     if (opsResult) {
                         try { ensureCompanyStructure(); } catch { /* ignore */ }
                         provider.postSystemNote(opsResult, '🧩');
+                        try { panel.webview.postMessage({ type: 'streamEnd' }); } catch {}
                         break;
                     }
                     const model = provider.getDefaultModel();
@@ -16480,6 +16483,10 @@ window.addEventListener('message', e => {
       setSending(false);
       break;
     }
+    case 'streamEnd': {
+      setSending(false);
+      break;
+    }
   }
 });
 
@@ -17812,6 +17819,8 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                             }
                             this._sidebarCorpModeOn = true;
                             await this._handleCorporatePrompt(tick.prompt, model);
+                        } else {
+                            webviewView.webview.postMessage({ type: 'streamEnd' });
                         }
                         break;
                     }
@@ -17819,6 +17828,7 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                     if (opsResult) {
                         try { ensureCompanyStructure(); } catch { /* ignore */ }
                         this.postSystemNote(opsResult, '🧩');
+                        webviewView.webview.postMessage({ type: 'streamEnd' });
                         break;
                     }
                     const hasExplicit = !!this._detectExplicitMention(txt);
