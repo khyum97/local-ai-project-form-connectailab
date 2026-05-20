@@ -20883,7 +20883,19 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                    경로를 잊고 "_agents/developer/test/" 같은 추측 경로로 list_files
                    호출해 실패하던 사고 차단. */
                 const recentFilesCtx = this._buildRecentFilesContext(t.agent);
-                const sysPrompt = `${buildSpecialistPrompt(t.agent)}${this._getProjectMemory()}${buildAgentConfigStatus(t.agent)}${realtimeData}${readAgentSharedContext(t.agent, { lean: useLeanContext })}${peerCtx}${hallucinationGuard}${recentFilesCtx}`;
+                
+                // v2.100.3 — Implementation Target Guard to prevent endless planning/documenting loops
+                let implementationGuard = '';
+                const isDevAgent = ['senior_dev', 'frontend', 'backend', 'junior_dev'].includes(t.agent);
+                const wantsImplementation = /(만들|제작|코드|구현|프로그램|위젯|앱|app|widget|create|implement|build|write|coding)/i.test(prompt + ' ' + t.task);
+                if (isDevAgent && wantsImplementation) {
+                    implementationGuard = `\n\n[🛑 개발 에이전트 필수 행동 가이드 — 절대 마크다운 기획서만 작성하고 끝내지 마세요]\n` +
+                        `- 당신은 개발 실무 담당자입니다. 기획서(.md)나 설계서 파일 작성만 하고 턴을 끝내면 안 됩니다.\n` +
+                        `- 당장 지금 턴에서 실제 소스코드 파일(예: app.js, widget.py, index.html 등)을 새로 생성(\`<create_file>\`)하거나 수정(\`<edit_file>\`)하여 뼈대 코드라도 구현하세요.\n` +
+                        `- 말로만 "다음 단계에서 구현을 시작하겠습니다"라고 보고하지 마세요. 지금 당장 코드를 한 줄이라도 실제로 작성하여 디바이스에 파일로 저장하세요. 그렇지 않으면 작업 완료로 인정받지 못합니다.`;
+                }
+
+                const sysPrompt = `${buildSpecialistPrompt(t.agent)}${this._getProjectMemory()}${buildAgentConfigStatus(t.agent)}${realtimeData}${readAgentSharedContext(t.agent, { lean: useLeanContext })}${peerCtx}${hallucinationGuard}${recentFilesCtx}${implementationGuard}`;
                 const userMsg = `[CEO의 지시]\n${t.task}\n\n[원 사용자 명령 참고]\n${prompt}`;
 
                 let out = '';
