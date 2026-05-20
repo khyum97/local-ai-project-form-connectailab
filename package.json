@@ -286,7 +286,7 @@
         },
         "connectAiLab.autoCycleEnabled": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Enable autonomous work cycle when the user is idle."
         },
         "connectAiLab.dailyBriefingTime": {
