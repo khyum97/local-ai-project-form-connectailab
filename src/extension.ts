@@ -21764,6 +21764,7 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
         const IDLE_TIMEOUT_MS = (cfg.get<number>('streamIdleTimeoutSec', 60) || 60) * 1000;
         await new Promise<void>((resolve, reject) => {
             let buffer = '';
+            let accumulatedText = ''; // Track full stream content to check for repetition loops
             let firstTokenReceived = false;
             let lastChunkAt = Date.now();
             let settled = false;
@@ -21806,6 +21807,13 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                         if (token) {
                             firstTokenReceived = true;  /* v2.89.75 — 첫 토큰 도착 마킹 */
                             onToken(token);
+                            
+                            // v2.100.3 — Output Stream Guard: Detect malformed repetition pattern of edit_file tag and halt
+                            accumulatedText += token;
+                            const loopCount = (accumulatedText.match(/<\/replace>\s*<edit_file\b/gi) || []).length;
+                            if (loopCount >= 3) {
+                                finish(new Error('LLM output loop detected: </replace><edit_file> 비정상 편집 루프가 3회 이상 발생하여 스트림이 중단되었습니다.'));
+                            }
                         }
                     } catch { /* skip malformed line */ }
                 }
