@@ -8356,6 +8356,11 @@ OS 차이: 백그라운드 프로세스는 맥/리눅스에선 \`nohup ... &\`, 
 - 당신의 도구 폴더 (\`_agents/<id>/tools/\`) 와 사용자 프로젝트 폴더는 다릅니다. 사용자가 "이 프로젝트에 ..."라고 했으면 그 폴더는 도구 폴더 안이 아닙니다.
 - 경로가 헷갈리면 추측하지 말고 \`<list_files path="~/Downloads/지식메모리/_company"/>\` 처럼 상위 폴더부터 탐색하세요.
 
+[🛑 구현 및 제작 최우선 규칙]
+- 기획서(마크다운) 작성이나 구상 단계에만 계속 머물러 있지 마세요.
+- 사용자의 요청이 프로젝트나 프로그램 제작이라면, 즉시 디렉토리를 탐색하고 필요한 소스 파일(예: app.js, widget.py, index.html 등)을 새로 생성(\`<create_file>\`)하거나 수정(\`<edit_file>\`)하기 시작하세요.
+- 말로만 "다음 단계에서 코드를 작성하겠습니다"라고 구상만 하루종일 반복하는 행위는 엄격히 금지됩니다. 당장 지금 turn에서 실제 프로젝트 코드 파일이나 뼈대 코드를 한 줄이라도 작성하여 저장하고 검증 명령을 실행하세요.
+
 [출력 규칙]
 - 한국어 마크다운으로 작성
 - 첫 줄: 한 줄 시작 신호 (예: "${a.emoji} ${a.name}: 작업 시작합니다.")
@@ -8737,7 +8742,10 @@ export function activate(context: vscode.ExtensionContext) {
     // 사용자가 1인 기업 모드(👔)를 직접 켜는 시점에 그날의 첫 브리핑이 흐릅니다.
     // 24시간 ON의 진짜 의미: idle 여부와 상관없이 15분마다 CEO 사이클.
     // 사이드바 1인 기업 모드(👔) ON/OFF와도 무관 — 백그라운드에서 계속 일함.
-    provider.startAutoCycle(15, 0);
+    const autoCycleEnabled = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', false);
+    if (autoCycleEnabled) {
+        provider.startAutoCycle(15, 0);
+    }
     provider.startFactoryAutoLoop(5);
 
     // Telegram bidirectional bot — quietly idles when token/chat_id missing,
@@ -13469,6 +13477,25 @@ class OfficePanel {
                 case 'officePrompt': {
                     const prompt = String(msg.value || '').trim();
                     if (!prompt) return;
+                    if (/^\/factory\s+tick\b/i.test(prompt)) {
+                        const tick = startFactoryTick();
+                        provider.postSystemNote(tick.message, '🏭');
+                        if (tick.prompt) {
+                            const model = provider.getDefaultModel();
+                            if (model) {
+                                provider.runCorporatePromptExternal(tick.prompt, model).catch(() => {});
+                            } else {
+                                try { panel.webview.postMessage({ type: 'error', value: '⚠️ 기본 모델이 설정되지 않았어요.' }); } catch {}
+                            }
+                        }
+                        break;
+                    }
+                    const opsResult = handleOpsCommand(prompt);
+                    if (opsResult) {
+                        try { ensureCompanyStructure(); } catch { /* ignore */ }
+                        provider.postSystemNote(opsResult, '🧩');
+                        break;
+                    }
                     const model = provider.getDefaultModel();
                     provider.runCorporatePromptExternal(prompt, model).catch((e) => {
                         try { panel.webview.postMessage({ type: 'error', value: `⚠️ ${e?.message || e}` }); } catch { /* ignore */ }
@@ -13798,7 +13825,7 @@ class OfficePanel {
         if (customMapUri) {
             world.desks = { ...world.desks, ...CUSTOM_MAP_DESKS };
         }
-        const workdayOn = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', true);
+        const workdayOn = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', false);
         this._panel.webview.postMessage({
             type: 'officeInit',
             agents,
@@ -14662,7 +14689,7 @@ body.dispatching .beams{opacity:1}
 
   <!-- Action zone — primary CTA prominent, secondary toggles ghost. -->
   <div class="actions">
-    <button class="topbtn" id="workdayBtn" title="24시간 자동 운영 — 설정 로딩 중...">24h ⋯</button>
+    <button class="topbtn" id="workdayBtn" title="작업진행 — 설정 로딩 중...">작업진행 ⋯</button>
     <button class="topbtn primary" id="dashboardBtn" title="👥 직원 에이전트 보기 — 팀 전체 한눈에">👥 직원 에이전트 보기</button>
     <button class="topbtn ghost" id="apiBtn" title="🔌 외부 연결 — Telegram · YouTube · Google Calendar 등 API 키 한 곳에서">🔌</button>
     <button class="topbtn ghost" id="toggleSideBtn" title="활동 로그 패널 토글">📋</button>
@@ -15762,13 +15789,13 @@ function applyWorkdayState(on, opts){
   _workdayOn = !!on;
   if (workdayBtn) {
     /* 라벨에 더 명확한 행동 결과 텍스트 + on/off 클래스로 시각 구분 강화 */
-    workdayBtn.textContent = _workdayOn ? '24시간 자동 운영 ON' : '24시간 자동 운영 OFF';
+    workdayBtn.textContent = _workdayOn ? '작업진행 ON' : '작업진행 OFF';
     workdayBtn.classList.toggle('on', _workdayOn);
     workdayBtn.classList.toggle('off', !_workdayOn);
     workdayBtn.style.color = '';
     workdayBtn.title = _workdayOn
-      ? '🟢 ON — 1인 기업 에이전트들이 15분마다 미션을 향해 자동으로 한 스텝씩 일합니다. 자리 비워도, 일반 채팅 모드여도 계속 일해요. 클릭하면 끔.'
-      : '⚫ OFF — 자동 사이클 중단. 사용자가 직접 명령할 때만 동작. 클릭하면 다시 켬.';
+      ? '🟢 ON — 작업진행 중. 에이전트들이 15분마다 미션을 향해 자동으로 일합니다. 클릭하면 끔.'
+      : '⚫ OFF — 작업 대기. 사용자가 직접 명령할 때만 동작. 클릭하면 켬.';
   }
   if (_workdayOn) {
     try { startAutoWalk(); } catch {}
@@ -16095,7 +16122,7 @@ window.addEventListener('message', e => {
          The walking + chatter auto-fire is internally throttled, so applying
          the state immediately is safe.
          Fallback to 'true' only when the host genuinely didn't send a value. */
-      const initialWorkdayOn = (typeof m.workdayOn === 'boolean') ? m.workdayOn : true;
+      const initialWorkdayOn = (typeof m.workdayOn === 'boolean') ? m.workdayOn : false;
       applyWorkdayState(initialWorkdayOn, { fireImmediate: false });
       setTimeout(() => { agents.forEach(a => { showStatusIcon(a.id, '☕', 2500); }); }, 1200);
       logActivity('🏢','ceo','사무실 가동. 에이전트 '+agents.length+'명 자리 잡음.');
@@ -16709,7 +16736,7 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
         try {
             if (!isCompanyConfigured()) return;
             // 사용자가 24시간 업무를 OFF 했으면 자동 브리핑도 같이 OFF.
-            const enabled = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', true);
+            const enabled = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', false);
             if (!enabled) return;
             const today = new Date().toISOString().slice(0, 10);
             const last = ctx.globalState.get<string>('lastMorningBriefDate', '');
@@ -16862,7 +16889,7 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
         if (idleMs > 0 && Date.now() - this._lastUserActivityTs < idleMs) return;
         if (!isCompanyConfigured()) return;
         // Manual kill switch from agent panel — settings key, default ON.
-        const enabled = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', true);
+        const enabled = vscode.workspace.getConfiguration('connectAiLab').get<boolean>('autoCycleEnabled', false);
         if (!enabled) return;
         const model = this.getDefaultModel();
         if (!model) return;
