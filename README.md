@@ -2,7 +2,7 @@
 
 Personal local AI development company for VS Code/Cursor. It runs a small team of local AI employees that can plan, write files, use tools, keep memory, and move work toward real deliverables.
 
-Current version: `2.100.0`
+Current version: `2.100.2`
 
 ## What It Is
 
