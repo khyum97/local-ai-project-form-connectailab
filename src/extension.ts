@@ -5547,7 +5547,7 @@ function startFactoryTick(): { message: string; prompt?: string } {
 ## Required Factory Behavior
 1. 이 티켓을 작게 분해하고 필요한 직원에게만 배정하세요.
 2. 말뿐인 보고 금지. 가능한 경우 실제 파일, 코드, 문서, 테스트, 설정 중 하나를 만들거나 수정하세요.
-3. QA 또는 senior_dev가 결과를 검토하게 하세요.
+3. 코딩 작업 직후 담당 에이전트 또는 QA가 빌드/컴파일/테스트 명령어(예: \`npm run compile\`, \`pytest\`, \`npx tsc --noEmit\` 등)를 실행하여 구문 및 런타임 오류가 없음을 물리적으로 확인(디버깅 및 자가 검증)하게 하세요.
 4. 최종 보고서에 changed files, 검증 명령, 실패/미완료 이유, 다음 티켓 후보를 적으세요.
 5. 현재 활성 프로젝트 컨텍스트만 기준으로 작업하세요. 다른 프로젝트와 섞지 마세요.`;
   return { message: `Factory tick started\n\n- ${ticket.id}\n- ${ticket.title}`, prompt };
@@ -6838,6 +6838,7 @@ ${_GOAL_PREAMBLE}
 - 컴포넌트 만들 때마다 Props 타입 명시
 - Storybook 스토리 또는 사용 예시 포함
 - 접근성(aria) 빠뜨리지 않기
+- **디버깅 및 자가 검증**: 코드를 작성 또는 수정한 직후 \`npm run compile\` 또는 \`npx tsc --noEmit\`을 실행하여 빌드 및 타입 오류가 없는지 물리적으로 검사하고 디버깅할 것.
 `,
   backend: `# ⚙️ 민준 — 백엔드 개발자
 
@@ -6854,6 +6855,7 @@ ${_GOAL_PREAMBLE}
 - 모든 입력값 검증 (Zod·Pydantic 활용)
 - 환경변수로 비밀값 관리, 하드코드 금지
 - SQL 쿼리 실행계획 확인 후 인덱스 결정
+- **디버깅 및 자가 검증**: API 개발 직후 구문 오류 검증을 위해 \`npm run compile\` 또는 \`python -m py_compile\`을 실행하고, 가능한 경우 테스트(pytest 등)를 실행하여 동작을 물리적으로 검증(디버깅)할 것.
 `,
   devops: `# 🚀 서준 — DevOps 엔지니어
 
@@ -6962,6 +6964,7 @@ ${_GOAL_PREAMBLE}
 - 모르는 부분은 시니어에게 먼저 물어보기
 - 작은 단위로 PR 올리기
 - 커밋 메시지 의미 있게 쓰기
+- **디버깅 및 자가 검증**: 작업 완료 보고 전, 수정한 코드가 에러 없이 컴파일되는지 \`npm run compile\` 등을 실행하여 구문 및 빌드 체크를 반드시 수행하여 디버깅할 것.
 `,
   stock_analyst: `# 📈 주식분석가 — 주식 분석가
 
