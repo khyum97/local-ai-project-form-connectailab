@@ -619,7 +619,17 @@ function showAgentModelRoutingModal(data){
     +   specsBlock
     +   helpBlock
     +   diagnosticBlock
-    +   '<div class="amr-rows">' + rows + '</div>'
+    +   '<div class="amr-rows">'
+    +     '<div class="amr-row amr-row-all" style="border-bottom:2px solid rgba(167,139,250,.25);padding-bottom:12px;margin-bottom:12px;">'
+    +       '<div class="amr-agent" style="font-weight:bold;color:var(--accent,#a78bfa)">'
+    +         '<span class="amr-emoji">🔁</span>'
+    +         '<span class="amr-name">모든 직원 일괄 변경</span>'
+    +         '<span class="amr-role" style="color:rgba(167,139,250,.7)">선택 시 아래 모든 직원의 모델이 일괄 변경됩니다</span>'
+    +       '</div>'
+    +       '<select class="amr-select-all" style="border-color:rgba(167,139,250,.4);background:rgba(167,139,250,.1);font-weight:bold;color:#fef3c7;">' + modelOptions('') + '</select>'
+    +     '</div>'
+    +     rows
+    +   '</div>'
     +   '<div class="amr-actions">'
     +     '<button type="button" class="amr-trending" title="내 PC에 받아서 쓸 수 있는 로컬 LLM 목록 — HuggingFace 공개 데이터(다운로드 수·태그) 기반">로컬 LLM 카탈로그</button>'
     +     '<button type="button" class="amr-auto" title="시스템이 설치된 모델 + 에이전트 역할 분석해서 최적 매핑 자동 배정">자동 오케스트레이션</button>'
@@ -647,6 +657,15 @@ function showAgentModelRoutingModal(data){
     vscode.postMessage({ type: 'saveAgentModelRouting', map: newMap });
     setTimeout(close, 600);
   });
+  const selectAll = bd.querySelector('.amr-select-all');
+  if(selectAll){
+    selectAll.addEventListener('change', () => {
+      const val = selectAll.value;
+      bd.querySelectorAll('.amr-select').forEach(sel => {
+        sel.value = val;
+      });
+    });
+  }
   /* v2.89.27 — 자동 추천 버튼: 백엔드에서 매핑 받아서 드롭다운 갱신 */
   const autoBtn = bd.querySelector('.amr-auto');
   if(autoBtn){

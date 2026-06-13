@@ -852,6 +852,12 @@ const WORLD_LAYOUT = {
     ceo:        { building: 'office', localX: 88, localY: 88 },
     writer:     { building: 'office', localX: 50, localY: 78 },
     researcher: { building: 'office', localX: 70, localY: 78 },
+    accountant: { building: 'office', localX: 28, localY: 78 },
+    lawyer:     { building: 'office', localX: 38, localY: 78 },
+    stock_analyst: { building: 'office', localX: 18, localY: 58 },
+    market_analyst: { building: 'office', localX: 18, localY: 78 },
+    voice_summarizer: { building: 'office', localX: 58, localY: 78 },
+    auto_blogger: { building: 'office', localX: 88, localY: 58 },
   } as Record<string, AgentDeskRef>,
 
   // Visit-zones for idle wandering / autonomous behavior. Office-only.
@@ -882,6 +888,12 @@ const CUSTOM_MAP_DESKS: Record<string, DeskPos> = {
   writer:     { x: 51, y: 63 },
   // Bottom-center small admin desks — Researcher
   researcher: { x: 33, y: 82 },
+  accountant: { x: 28, y: 82 },
+  lawyer:     { x: 22, y: 82 },
+  stock_analyst: { x: 42, y: 53 },
+  market_analyst: { x: 42, y: 63 },
+  voice_summarizer: { x: 59, y: 53 },
+  auto_blogger: { x: 59, y: 63 },
 };
 
 /** Convert each agent's building-local desk into world % coords. */
@@ -13828,6 +13840,10 @@ class OfficePanel {
         const spriteAlias: Record<string, string> = {
             accountant: 'business',
             lawyer: 'devops',
+            stock_analyst: 'business',
+            market_analyst: 'researcher',
+            voice_summarizer: 'writer',
+            auto_blogger: 'instagram',
         };
         const spriteId = spriteAlias[agentId] || agentId;
         const bundled = vscode.Uri.joinPath(this._ctx.extensionUri, 'assets', 'pixel', 'characters', `${spriteId}.png`);
@@ -15008,13 +15024,23 @@ let currentTasks = [];
    the brief moment before the message arrives. Office is at world
    x=540..1052, y=90..634, so each agent's office-local % maps to world. */
 let HOME_POS = {
-  youtube:   { x: 49, y: 41 },
-  instagram: { x: 56, y: 41 },
-  designer:  { x: 63, y: 41 },
-  business:  { x: 69, y: 41 },
-  developer: { x: 49, y: 57 },
-  secretary: { x: 69, y: 57 },
-  ceo:       { x: 64, y: 77 }
+  ceo:              { x: 64, y: 77 },
+  secretary:        { x: 69, y: 57 },
+  senior_dev:       { x: 49, y: 57 },
+  frontend:         { x: 49, y: 41 },
+  backend:          { x: 56, y: 41 },
+  devops:           { x: 63, y: 41 },
+  designer:         { x: 63, y: 57 },
+  qa:               { x: 69, y: 41 },
+  junior_dev:       { x: 49, y: 65 },
+  writer:           { x: 56, y: 65 },
+  researcher:       { x: 63, y: 65 },
+  accountant:       { x: 69, y: 65 },
+  lawyer:           { x: 49, y: 73 },
+  stock_analyst:    { x: 56, y: 73 },
+  market_analyst:   { x: 63, y: 73 },
+  voice_summarizer: { x: 69, y: 73 },
+  auto_blogger:     { x: 75, y: 73 }
 };
 
 function getHomeXY(agentId){
@@ -17888,6 +17914,9 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                             delete map[agentId];
                         }
                         writeAgentModelMap(map);
+                        try {
+                            if (CompanyDashboardPanel.current) CompanyDashboardPanel.current.refresh();
+                        } catch { /* ignore */ }
                         webviewView.webview.postMessage({ type: 'agentDockSaved', ok: true, agent: agentId, model });
                     } catch (e: any) {
                         webviewView.webview.postMessage({ type: 'agentDockSaved', ok: false, error: String(e?.message || e) });
@@ -17899,6 +17928,9 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                         const installed = await listInstalledModels();
                         const auto = _autoOrchestrateModelMap(installed);
                         writeAgentModelMap(auto);
+                        try {
+                            if (CompanyDashboardPanel.current) CompanyDashboardPanel.current.refresh();
+                        } catch { /* ignore */ }
                         webviewView.webview.postMessage({ type: 'agentDockAutoMapped', ok: true, map: auto });
                     } catch (e: any) {
                         webviewView.webview.postMessage({ type: 'agentDockAutoMapped', ok: false, error: String(e?.message || e) });
@@ -17912,12 +17944,12 @@ class SidebarChatProvider implements vscode.WebviewViewProvider {
                             webviewView.webview.postMessage({ type: 'agentDockSaved', ok: false, error: '모델이 비어있어요' });
                             break;
                         }
-                        const isDefault = model === (getConfig().defaultModel || '');
                         const map: Record<string, string> = {};
-                        if (!isDefault) {
-                            for (const id of AGENT_ORDER) map[id] = model;
-                        }
+                        for (const id of AGENT_ORDER) map[id] = model;
                         writeAgentModelMap(map);
+                        try {
+                            if (CompanyDashboardPanel.current) CompanyDashboardPanel.current.refresh();
+                        } catch { /* ignore */ }
                         webviewView.webview.postMessage({ type: 'agentDockSaved', ok: true, all: true, model });
                     } catch (e: any) {
                         webviewView.webview.postMessage({ type: 'agentDockSaved', ok: false, error: String(e?.message || e) });
