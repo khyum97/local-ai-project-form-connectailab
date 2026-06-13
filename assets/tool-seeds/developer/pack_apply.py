@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# version: pack_apply_v7
+# version: pack_apply_v7_2
 """두뇌의 템플릿 팩을 사용자 프로젝트에 한 번에 적용.
 
 흐름:
@@ -26,7 +26,7 @@ WEB_INIT_CFG = os.path.join(HERE, "web_init.json")
 
 def _log(msg, kind="info"):
     prefix = {"info": "📋", "ok": "✅", "warn": "⚠️ ", "err": "❌", "step": "▸"}.get(kind, "•")
-    print(f"{prefix} {msg}", file=sys.stderr, flush=True)
+    print(f"{prefix} {msg}", file=sys.stdout, flush=True)
 
 
 def _load(p):

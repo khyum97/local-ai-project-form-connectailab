@@ -3976,6 +3976,135 @@ function readTracker(): { tasks: TrackerTask[] } {
   } catch { return { tasks: [] }; }
 }
 
+interface ProjectItem {
+  id: string;
+  name: string;
+  path: string;
+  description: string;
+  lastWork: string;
+  progress: number;
+  updatedAt: string;
+}
+
+interface ProjectsConfig {
+  activeProjectId?: string;
+  projects: ProjectItem[];
+}
+
+function _projectsPath(): string {
+  return path.join(getCompanyDir(), '_shared', 'projects.json');
+}
+
+function readProjects(): ProjectsConfig {
+  try {
+    const p = _projectsPath();
+    let config: ProjectsConfig = { projects: [] };
+    if (fs.existsSync(p)) {
+      const raw = fs.readFileSync(p, 'utf-8');
+      config = JSON.parse(raw || '{}');
+      if (!Array.isArray(config.projects)) config.projects = [];
+    }
+
+    // Auto-scan ~/connect-ai-projects/ folder
+    const projectsBaseDir = path.join(os.homedir(), 'connect-ai-projects');
+    if (fs.existsSync(projectsBaseDir)) {
+      const dirs = fs.readdirSync(projectsBaseDir, { withFileTypes: true });
+      let modified = false;
+      for (const d of dirs) {
+        if (!d.isDirectory() || d.name.startsWith('.')) continue;
+        const absPath = path.join(projectsBaseDir, d.name).replace(/\\/g, '/');
+        const exists = config.projects.some(pr => pr.path.replace(/\\/g, '/').toLowerCase() === absPath.toLowerCase());
+        if (!exists) {
+          config.projects.push({
+            id: d.name,
+            name: d.name,
+            path: absPath,
+            description: 'Scaffolded project',
+            lastWork: 'Initialized',
+            progress: 10,
+            updatedAt: new Date().toISOString()
+          });
+          modified = true;
+        }
+      }
+      if (modified) {
+        writeProjects(config);
+      }
+    }
+    return config;
+  } catch {
+    return { projects: [] };
+  }
+}
+
+function writeProjects(config: ProjectsConfig) {
+  try {
+    const p = _projectsPath();
+    const dir = path.dirname(p);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(config, null, 2), 'utf-8');
+    _broadcastProjectsUpdate(config);
+  } catch (e) {
+    console.error('[Projects] write failed', e);
+  }
+}
+
+function _broadcastProjectsUpdate(config: ProjectsConfig) {
+  try {
+    if (OfficePanel.current) {
+      OfficePanel.current.postMessage({ type: 'projectsLoaded', data: config });
+    }
+  } catch { /* ignore */ }
+}
+
+function updateProjectToolConfigs(projectPath: string) {
+  try {
+    const companyDir = getCompanyDir();
+    const agentsToUpdate = ['senior_dev', 'developer'];
+    const toolsToUpdate = ['pack_apply.json', 'web_preview.json', 'pwa_setup.json', 'lint_test.json', 'web_init.json'];
+    const targetPath = projectPath.replace(/\\/g, '/');
+
+    for (const aid of agentsToUpdate) {
+      const toolsDir = path.join(companyDir, '_agents', aid, 'tools');
+      if (!fs.existsSync(toolsDir)) continue;
+
+      for (const tool of toolsToUpdate) {
+        const p = path.join(toolsDir, tool);
+        if (fs.existsSync(p)) {
+          try {
+            const raw = fs.readFileSync(p, 'utf-8');
+            const data = JSON.parse(raw);
+            if (tool === 'web_init.json') {
+              const parent = path.dirname(targetPath);
+              const name = path.basename(targetPath);
+              data.OUTPUT_DIR = parent;
+              data.PROJECT_NAME = name;
+            } else {
+              data.PROJECT_PATH = targetPath;
+            }
+            fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+          } catch { /* skip if corrupt */ }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Projects] failed to update tool configs', e);
+  }
+}
+
+function updateActiveProjectLastWork(toolName: string) {
+  try {
+    const config = readProjects();
+    if (!config.activeProjectId) return;
+    const project = config.projects.find(p => p.id === config.activeProjectId);
+    if (project) {
+      project.lastWork = `${toolName} 실행 완료`;
+      project.updatedAt = new Date().toISOString();
+      writeProjects(config);
+    }
+  } catch { /* ignore */ }
+}
+
 /* Module-level event emitter so the sidebar Task TreeView auto-refreshes
    whenever the tracker file is modified through writeTracker (no matter who
    calls it — Secretary, autoMark, edit commands, recurrence loop). */
@@ -7540,6 +7669,16 @@ function _seedBundledAgentToolsIfMissing(agentId: string) {
         try {
           _mergeSchemaIntoJson(dst, fs.readFileSync(src, 'utf-8'));
         } catch { /* keep existing user config */ }
+      } else if (entry.name.toLowerCase().endsWith('.py')) {
+        try {
+          const srcLines = fs.readFileSync(src, 'utf-8').split('\n');
+          const dstLines = fs.readFileSync(dst, 'utf-8').split('\n');
+          const srcVer = srcLines.find(l => l.includes('version:'));
+          const dstVer = dstLines.find(l => l.includes('version:'));
+          if (srcVer && srcVer !== dstVer) {
+            fs.copyFileSync(src, dst);
+          }
+        } catch { /* ignore */ }
       }
     }
   } catch { /* ignore */ }
@@ -7624,7 +7763,7 @@ function _seedDeveloperWebInit(toolsDir: string) {
       },
     },
   }, null, 2);
-  _seedFileForceUpgrade(path.join(toolsDir, 'web_init.py'), py, 'web_init_v3');
+  _seedFileForceUpgrade(path.join(toolsDir, 'web_init.py'), py, 'web_init_v3_1');
   _mergeSchemaIntoJson(path.join(toolsDir, 'web_init.json'), json);
   _seedFileForceUpgrade(path.join(toolsDir, 'web_init.md'), md, 'web_init_v1');
 }
@@ -7707,7 +7846,7 @@ function _seedDeveloperPackApply(toolsDir: string) {
       },
     },
   }, null, 2);
-  _seedFileForceUpgrade(path.join(toolsDir, 'pack_apply.py'), py, 'pack_apply_v7_1');
+  _seedFileForceUpgrade(path.join(toolsDir, 'pack_apply.py'), py, 'pack_apply_v7_2');
   _mergeSchemaIntoJson(path.join(toolsDir, 'pack_apply.json'), json);
   _seedFileForceUpgrade(path.join(toolsDir, 'pack_apply.md'), md, 'pack_apply_v1');
 }
@@ -13551,6 +13690,62 @@ class OfficePanel {
                 case 'officeReady':
                     this._sendInit();
                     break;
+                case 'loadProjects': {
+                    const data = readProjects();
+                    panel.webview.postMessage({ type: 'projectsLoaded', data });
+                    break;
+                }
+                case 'selectProject': {
+                    const config = readProjects();
+                    config.activeProjectId = msg.projectId;
+                    const p = config.projects.find(x => x.id === msg.projectId);
+                    if (p) {
+                        updateProjectToolConfigs(p.path);
+                    }
+                    writeProjects(config);
+                    break;
+                }
+                case 'saveProject': {
+                    const config = readProjects();
+                    const p = config.projects.find(x => x.id === msg.projectId);
+                    if (p) {
+                        p.description = msg.description || '';
+                        p.progress = Number(msg.progress) || 0;
+                        p.updatedAt = new Date().toISOString();
+                    }
+                    writeProjects(config);
+                    break;
+                }
+                case 'addProject': {
+                    const config = readProjects();
+                    const pPath = (msg.path || '').trim().replace(/\\/g, '/');
+                    if (pPath) {
+                        const name = path.basename(pPath) || 'unnamed-project';
+                        const exists = config.projects.some(x => x.path.replace(/\\/g, '/').toLowerCase() === pPath.toLowerCase());
+                        if (!exists) {
+                            config.projects.push({
+                                id: name + '-' + Math.random().toString(36).slice(2, 6),
+                                name,
+                                path: pPath,
+                                description: msg.description || 'Custom added project',
+                                lastWork: 'Added',
+                                progress: 0,
+                                updatedAt: new Date().toISOString()
+                            });
+                            writeProjects(config);
+                        }
+                    }
+                    break;
+                }
+                case 'deleteProject': {
+                    const config = readProjects();
+                    config.projects = config.projects.filter(x => x.id !== msg.projectId);
+                    if (config.activeProjectId === msg.projectId) {
+                        config.activeProjectId = undefined;
+                    }
+                    writeProjects(config);
+                    break;
+                }
                 case 'openRevenueDashboard':
                     /* v2.89.143 — 가상 사무실 HUD 클릭 → 풀스크린 매출 대시보드 */
                     RevenueDashboardPanel.createOrShow();
@@ -13800,6 +13995,10 @@ class OfficePanel {
         panel.webview.html = this._renderHtml();
     }
 
+    public postMessage(msg: any) {
+        try { this._panel.webview.postMessage(msg); } catch { /* ignore */ }
+    }
+
     /** 사용자가 설정에 명시적으로 추가 자산 경로를 지정한 경우만 사용. 그 외엔 vsix 번들 자산 사용. */
     private static _resolveUserAssetsPath(): string {
         const cfg = vscode.workspace.getConfiguration('connectAiLab');
@@ -13989,6 +14188,14 @@ class OfficePanel {
                 customMap: customMapUri ? 'OK' : 'none',
             }
         });
+        
+        try {
+            const projectsData = readProjects();
+            this._panel.webview.postMessage({
+                type: 'projectsLoaded',
+                data: projectsData
+            });
+        } catch { /* ignore */ }
     }
 
     public dispose() {
@@ -20395,6 +20602,34 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             appendConversationLog({ speaker: a.name, emoji: a.emoji, section: `도구 실행 (${source})`, body: `${entry.tool} 실패: ${toolOut.slice(0, 500)}` });
             return true;
         }
+
+        // v2.101.3: Update projects registry on successful tool execution
+        try {
+            const m = toolOut.match(/PROJECT_PATH=([^\r\n]+)/);
+            if (m && m[1]) {
+                const newPath = m[1].trim().replace(/\\/g, '/');
+                const name = path.basename(newPath);
+                const config = readProjects();
+                let proj = config.projects.find(x => x.path.replace(/\\/g, '/').toLowerCase() === newPath.toLowerCase());
+                if (!proj) {
+                    proj = {
+                        id: name + '-' + Math.random().toString(36).slice(2, 6),
+                        name,
+                        path: newPath,
+                        description: 'Scaffolded project',
+                        lastWork: 'web_init 실행 완료',
+                        progress: 10,
+                        updatedAt: new Date().toISOString()
+                    };
+                    config.projects.push(proj);
+                }
+                config.activeProjectId = proj.id;
+                writeProjects(config);
+                updateProjectToolConfigs(newPath);
+            } else {
+                updateActiveProjectLastWork(entry.tool);
+            }
+        } catch { /* ignore */ }
 
         /* "분석" 의도가 명시적이지 않으면 (예: "내 채널 데이터 보여줘") LLM 분석 스킵하고
            원본 데이터만. 의도 단어 있으면 (분석/어때/평가/검토 등) 2단계 LLM chain 발동. */

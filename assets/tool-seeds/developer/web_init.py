@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# version: web_init_v3
+# version: web_init_v3_1
 """웹·모바일 프로젝트 자동 초기화 — 5개 템플릿 중 선택.
 
 config:
@@ -18,7 +18,7 @@ CONFIG = os.path.join(HERE, "web_init.json")
 
 def _log(msg, kind="info"):
     prefix = {"info": "💻", "ok": "✅", "warn": "⚠️ ", "err": "❌", "step": "▸"}.get(kind, "•")
-    print(f"{prefix} {msg}", file=sys.stderr, flush=True)
+    print(f"{prefix} {msg}", file=sys.stdout, flush=True)
 
 
 def _load():
