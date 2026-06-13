@@ -152,6 +152,46 @@ export const AGENTS: Record<string, AgentDef> = {
     tagline: 'Reviews legal risk, contracts, compliance, privacy, and policy across the business.',
     persona: '법무·컴플라이언스 전문가 법무. 회사 전반의 계약, 약관, 개인정보, 지식재산, 노동, 규제 리스크를 먼저 본다.'
   },
+  stock_analyst: {
+    id: 'stock_analyst',
+    name: '주식분석가',
+    role: '주식 분석가',
+    emoji: '📈',
+    color: '#3B82F6',
+    specialty: '주식 분석 자동화 프로그램 구동, KIS OpenAPI 연동 상태 확인, 국내/미국 주식 시세 모니터링, 자동매매 프리셋 설정 분석, 백테스팅 결과 검토',
+    tagline: '주식 분석 자동화 프로그램을 구동하여 시장을 감시하고 분석합니다.',
+    persona: '주식 분석 전문가. 숫자를 매우 신뢰하며, 백테스팅 결과와 시황 데이터를 기반으로 분석 의견을 제공합니다.'
+  },
+  market_analyst: {
+    id: 'market_analyst',
+    name: '시장분석가',
+    role: '시장 분석가',
+    emoji: '📊',
+    color: '#EC4899',
+    specialty: '시장 분석 자동화 프로그램(FastAPI/React) 구동, SSE 이벤트 수집, 업종/테마 데이터 분석, 감성 점수 기반 모니터링',
+    tagline: '시장 분석 자동화 프로그램을 구동하여 국내외 거시 경제 및 시장 트렌드를 분석합니다.',
+    persona: '시장 트렌드 분석 전문가. 뉴스 감성 점수와 대시보드 데이터를 종합적으로 해석하여 전략 방향을 제시합니다.'
+  },
+  voice_summarizer: {
+    id: 'voice_summarizer',
+    name: '음성요약가',
+    role: '음성 요약 전문가',
+    emoji: '🎙️',
+    color: '#8B5CF6',
+    specialty: '음성녹음 요약 프로그램(FastAPI/Whisper) 구동, 오디오 텍스트 변환(STT) 로그 분석, 요약 기록 저장소 관리',
+    tagline: '음성녹음 요약 프로그램을 구동하여 녹음 데이터를 회의록 및 요약 마크다운으로 변환합니다.',
+    persona: '음성 요약 전문가. Whisper 변환 로그를 면밀히 분석하고, 핵심 안건과 조치 사항을 일목요연하게 정리합니다.'
+  },
+  auto_blogger: {
+    id: 'auto_blogger',
+    name: '블로그마케터',
+    role: '자동 블로그 마케터',
+    emoji: '📝',
+    color: '#10B981',
+    specialty: '자동블로그 작성 프로그램(Express/Express-Playwright) 구동, Naver 스마트에디터 API 연동 확인, 기술 블로그 자동 포스팅',
+    tagline: '자동블로그 작성 프로그램을 구동하여 네이버 블로그 포스팅 및 자동 홍보를 수행합니다.',
+    persona: '블로그 마케팅 전문가. Gemini API 연동과 Playwright 브라우저 자동화 동작 상태를 검증하고 홍보글을 발행합니다.'
+  },
 };
 
 export const AGENT_ORDER = [
@@ -168,6 +208,10 @@ export const AGENT_ORDER = [
   'junior_dev',
   'accountant',
   'lawyer',
+  'stock_analyst',
+  'market_analyst',
+  'voice_summarizer',
+  'auto_blogger',
 ];
 
 export const SPECIALIST_IDS = [
@@ -183,4 +227,8 @@ export const SPECIALIST_IDS = [
   'junior_dev',
   'accountant',
   'lawyer',
+  'stock_analyst',
+  'market_analyst',
+  'voice_summarizer',
+  'auto_blogger',
 ];

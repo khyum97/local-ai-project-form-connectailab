@@ -1114,8 +1114,8 @@ const LOCKED_AGENTS_DEFAULT: Record<string, boolean> = {};
    DEFAULT_ON: 첫 진입 시 자동 활성화. 사용자가 언제든 OFF 가능.
    OPTIONAL: DEFAULT_ON과 동일 범위 — 직원 패널에서 개별 토글 가능. */
 const ALWAYS_ON_AGENTS: Set<string> = new Set(['ceo']);
-const DEFAULT_ON_AGENTS: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev']);
-const OPTIONAL_AGENTS_DEFAULT: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev']);
+const DEFAULT_ON_AGENTS: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev', 'stock_analyst', 'market_analyst', 'voice_summarizer', 'auto_blogger']);
+const OPTIONAL_AGENTS_DEFAULT: Set<string> = new Set(['secretary', 'senior_dev', 'frontend', 'backend', 'devops', 'designer', 'qa', 'writer', 'researcher', 'junior_dev', 'stock_analyst', 'market_analyst', 'voice_summarizer', 'auto_blogger']);
 
 function _hiredJsonPath(): string {
   return path.join(getCompanyDir(), '_shared', 'hired.json');
@@ -5512,8 +5512,16 @@ function startFactoryTick(): { message: string; prompt?: string } {
   }
   const project = idx.projects[ticket.project || activeProject];
   const projectName = project?.name || ticket.project || activeProject;
+
+  let blockHistoryWarning = '';
+  if (ticket.review) {
+    blockHistoryWarning = `\n\n> ⚠️ **이전 실행 실패 경고 (직전 실행이 Blocked 처리됨):**
+> **반려 사유:** ${ticket.review}
+> **지시사항:** 이번 실행에서는 단순히 말만 하거나 기안서(텍스트 보고서)만 작성하고 끝내서는 절대 안 됩니다. 반드시 실제 작동하는 소스코드 파일(.ts, .py, .js 등)을 생성하거나 수정해야 검수를 통과(shipped)할 수 있습니다. 관련 에이전트(예: senior_dev, junior_dev 등)에게 반드시 실제 코딩 작업을 시키세요!`;
+  }
+
   const prompt = `[FACTORY_TICKET:${ticket.id}]
-당신은 Yum Agent Company의 CEO입니다. Factory Queue에서 다음 티켓 1개를 실제 결과물로 진행하세요.
+당신은 Yum Agent Company의 CEO입니다. Factory Queue에서 다음 티켓 1개를 실제 결과물로 진행하세요.${blockHistoryWarning}
 
 ## Active Project
 - slug: ${ticket.project || activeProject}
@@ -5580,15 +5588,52 @@ function reviewFactoryTickets(): string {
     const evidencePath = _resolveFactoryEvidencePath(ticket);
     const now = new Date().toISOString();
     if (evidencePath) {
-      ticket.status = 'shipped';
-      ticket.review = `shipped: evidence found at ${evidencePath}`;
-      ticket.updatedAt = now;
-      lines.push(`SHIPPED ${ticket.id.slice(-8)} ${ticket.title}`);
-      const projectSlug = ticket.project || _readProjectIndex().active;
-      if (projectSlug) {
-        const releasePath = path.join(_projectDir(projectSlug), 'release-notes.md');
-        fs.mkdirSync(path.dirname(releasePath), { recursive: true });
-        fs.appendFileSync(releasePath, `\n## ${now.slice(0, 10)} — ${ticket.title}\n- ticket: ${ticket.id}\n- evidence: ${ticket.evidence || evidencePath}\n- status: shipped\n`);
+      let isCodeChangeFound = true;
+      let reviewMessage = `shipped: evidence found at ${evidencePath}`;
+
+      const CODE_DEVELOPER_AGENTS = ['senior_dev', 'frontend', 'backend', 'junior_dev', 'developer'];
+      if (evidencePath.endsWith('_manifest.json')) {
+        try {
+          const manifestContent = JSON.parse(fs.readFileSync(evidencePath, 'utf-8'));
+          const tasks = manifestContent.tasks || [];
+          const actualChanges = manifestContent.actualWorkspaceChanges || [];
+          
+          const isDevOwner = ticket.owner && CODE_DEVELOPER_AGENTS.includes(ticket.owner);
+          const hasDevTask = tasks.some((t: any) => CODE_DEVELOPER_AGENTS.includes(t.agent));
+          
+          if (isDevOwner || hasDevTask) {
+            const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.go', '.rs', '.cpp', '.c', '.html', '.css', '.vue', '.svelte'];
+            const hasSourceCodeChanges = actualChanges.some((c: any) => {
+              const ext = path.extname(c.absPath || '').toLowerCase();
+              return (c.action === 'create' || c.action === 'edit') && codeExtensions.includes(ext);
+            });
+            
+            if (!hasSourceCodeChanges) {
+              isCodeChangeFound = false;
+              reviewMessage = `blocked: No source code files (${codeExtensions.join(', ')}) were created or modified by developer agents, only text reports were written. Ensure code implementation is done.`;
+            }
+          }
+        } catch (e) {
+          // ignore parsing error, proceed to ship
+        }
+      }
+
+      if (isCodeChangeFound) {
+        ticket.status = 'shipped';
+        ticket.review = reviewMessage;
+        ticket.updatedAt = now;
+        lines.push(`SHIPPED ${ticket.id.slice(-8)} ${ticket.title}`);
+        const projectSlug = ticket.project || _readProjectIndex().active;
+        if (projectSlug) {
+          const releasePath = path.join(_projectDir(projectSlug), 'release-notes.md');
+          fs.mkdirSync(path.dirname(releasePath), { recursive: true });
+          fs.appendFileSync(releasePath, `\n## ${now.slice(0, 10)} — ${ticket.title}\n- ticket: ${ticket.id}\n- evidence: ${ticket.evidence || evidencePath}\n- status: shipped\n`);
+        }
+      } else {
+        ticket.status = 'blocked';
+        ticket.review = reviewMessage;
+        ticket.updatedAt = now;
+        lines.push(`BLOCKED ${ticket.id.slice(-8)} ${ticket.title} — code change missing`);
       }
     } else {
       ticket.status = 'blocked';
@@ -6906,6 +6951,62 @@ ${_GOAL_PREAMBLE}
 - 작은 단위로 PR 올리기
 - 커밋 메시지 의미 있게 쓰기
 `,
+  stock_analyst: `# 📈 주식분석가 — 주식 분석가
+
+${_GOAL_PREAMBLE}
+## 역할 및 정체성
+- "주식 분석 자동화" 프로그램 전용 구동 및 상태 진단 전문가.
+- KIS OpenAPI 연동, 미국/국내 주식 시세 모니터링 상태를 검증합니다.
+
+## 이번 주 목표
+- 주식 분석 자동화 프로그램 구동 상태 및 포트폴리오 점검.
+- 자동매매 프리셋 설정 분석 및 백테스팅 결과 검토.
+
+## 작업 원칙
+- 프로그램 구동/진단 명령 실행(stock_runner) 전후 상태 확인 필수.
+`,
+  market_analyst: `# 📊 시장분석가 — 시장 분석가
+
+${_GOAL_PREAMBLE}
+## 역할 및 정체성
+- "시장 분석 자동화" 프로그램(FastAPI/React) 구동 및 모니터링 전문가.
+- 업종/테마 데이터 수집 상태 및 SSE 이벤트 감성 분석 결과를 검토합니다.
+
+## 이번 주 목표
+- 시장 분석 자동화 대시보드 상태 및 Ingestion API 점검.
+- 뉴스 감성 점수 및 경제 트렌드 수집 로그 분석.
+
+## 작업 원칙
+- 프로그램 구동/진단 명령 실행(market_runner) 전후 상태 확인 필수.
+`,
+  voice_summarizer: `# 🎙️ 음성요약가 — 음성 요약 전문가
+
+${_GOAL_PREAMBLE}
+## 역할 및 정체성
+- "음성녹음 요약" 프로그램(FastAPI/Whisper) 구동 및 요약 로그 점검 전문가.
+- STT(Speech-to-Text) 변환 상태 및 요약본 생성 프로세스를 감시합니다.
+
+## 이번 주 목표
+- 오디오 변환 로그 분석 및 markdown 요약 생성 상태 점검.
+- 요약 데이터베이스/저장소의 백업 및 정리 상태 확인.
+
+## 작업 원칙
+- 프로그램 구동/진단 명령 실행(voice_runner) 전후 상태 확인 필수.
+`,
+  auto_blogger: `# 📝 블로그마케터 — 자동 블로그 마케터
+
+${_GOAL_PREAMBLE}
+## 역할 및 정체성
+- "자동블로그 작성" 프로그램(Express/Playwright) 구동 및 포스팅 점검 전문가.
+- 스마트에디터 API 연동, Playwright 브라우저 자동화 연동을 점검합니다.
+
+## 이번 주 목표
+- 자동 블로그 작성 프로그램 구동 상태 및 포스팅 발행 결과 검증.
+- 네이버 블로그 스마트에디터 API 및 Gemini API 응답 확인.
+
+## 작업 원칙
+- 프로그램 구동/진단 명령 실행(blog_runner) 전후 상태 확인 필수.
+`,
 };
 
 function readAgentGoal(agentId: string): string {
@@ -7262,6 +7363,18 @@ const AGENT_TOOLS_CATALOG: Record<string, { tool: string; desc: string; planned?
         { tool: 'web_search', desc: 'Brave/DuckDuckGo 검색 (Connected)', planned: true },
         { tool: 'page_fetcher', desc: '본문 추출 + 출처 인용', planned: true },
         { tool: 'monitor_daily', desc: '매일 내 분야 뉴스 → CEO 브리핑', planned: true }
+    ],
+    stock_analyst: [
+        { tool: 'stock_runner', desc: '주식 분석 자동화 프로그램 구동 및 상태 진단' }
+    ],
+    market_analyst: [
+        { tool: 'market_runner', desc: '시장 분석 자동화 프로그램 구동 및 상태 진단' }
+    ],
+    voice_summarizer: [
+        { tool: 'voice_runner', desc: '음성녹음 요약 프로그램 구동 및 상태 진단' }
+    ],
+    auto_blogger: [
+        { tool: 'blog_runner', desc: '자동블로그 작성 프로그램 구동 및 상태 진단' }
     ]
 };
 
@@ -8102,7 +8215,14 @@ function writeRunQualityReport(
   return report;
 }
 
-function writeRunManifest(sessionDir: string, prompt: string, plan: CompanyWorkPlan, finalReport: string, qualityReport: string) {
+function writeRunManifest(
+  sessionDir: string,
+  prompt: string,
+  plan: CompanyWorkPlan,
+  finalReport: string,
+  qualityReport: string,
+  recentActions?: Array<{ agentId: string; absPath: string; action: string; ts: number }>
+) {
   const manifest = {
     runId: path.basename(sessionDir),
     createdAt: new Date().toISOString(),
@@ -8119,6 +8239,7 @@ function writeRunManifest(sessionDir: string, prompt: string, plan: CompanyWorkP
     files: ['_contract.md', '_brief.md', ...plan.tasks.map(t => `${t.agent}.md`), '_quality.md', '_report.md'],
     qualitySummary: qualityReport.split('\n').slice(0, 12).join('\n'),
     reportPreview: finalReport.slice(0, 1200),
+    actualWorkspaceChanges: recentActions || []
   };
   fs.writeFileSync(path.join(sessionDir, '_manifest.json'), JSON.stringify(manifest, null, 2));
 }
@@ -20740,6 +20861,10 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 '편집자': 'editor', '편집': 'editor',
                 '작가': 'writer', '카피라이터': 'writer',
                 '리서처': 'researcher', '연구원': 'researcher', '리서치': 'researcher',
+                '주식분석가': 'stock_analyst', '주식분석': 'stock_analyst', '주식': 'stock_analyst',
+                '시장분석가': 'market_analyst', '시장분석': 'market_analyst', '시장': 'market_analyst',
+                '음성요약가': 'voice_summarizer', '음성요약': 'voice_summarizer', '음성': 'voice_summarizer',
+                '블로그마케터': 'auto_blogger', '블로그마케팅': 'auto_blogger', '블로그': 'auto_blogger',
             };
             const originalTasks = [...plan.tasks];
             plan.tasks = plan.tasks
@@ -21516,7 +21641,7 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
                 ];
                 finalReport = `${finalReport}\n\n---\n\n## Run Artifacts\n${runFiles.map(f => `- \`${f}\``).join('\n')}\n\n## Quality Gate\nSee \`_quality.md\` for the saved acceptance check.`;
                 fs.writeFileSync(path.join(sessionDir, '_report.md'), `# 📝 CEO 종합 보고서\n\n${finalReport}\n`);
-                writeRunManifest(sessionDir, prompt, plan, finalReport, qualityReport);
+                writeRunManifest(sessionDir, prompt, plan, finalReport, qualityReport, this._recentFileActions);
             } catch { /* ignore */ }
             appendAgentMemory('ceo', `${prompt} → 보고서 sessions/${path.basename(sessionDir)}/_report.md`);
             // Phase 1: log CEO's final synthesis into the running transcript
@@ -21884,6 +22009,10 @@ ${catalog.map((c, i) => `${i + 1}. agent=${c.agentId} tool=${c.tool} — ${c.des
             { patterns: [/작가[야아!,]/, /@writer\b/], agentId: 'writer', agentName: '작가' },
             { patterns: [/리서처[야아!,]/, /@researcher\b/], agentId: 'researcher', agentName: '리서처' },
             { patterns: [/인스타[야아!,]/, /@instagram\b/], agentId: 'instagram', agentName: '인스타' },
+            { patterns: [/주식분석가[야아!,~ ]/, /주식분석[야아!,~ ]/, /@stock_analyst\b/], agentId: 'stock_analyst', agentName: '주식분석가' },
+            { patterns: [/시장분석가[야아!,~ ]/, /시장분석[야아!,~ ]/, /@market_analyst\b/], agentId: 'market_analyst', agentName: '시장분석가' },
+            { patterns: [/음성요약가[야아!,~ ]/, /음성요약[야아!,~ ]/, /@voice_summarizer\b/], agentId: 'voice_summarizer', agentName: '음성요약가' },
+            { patterns: [/블로그마케터[야아!,~ ]/, /블로그마케팅[야아!,~ ]/, /블로그[야아!,~ ]/, /@auto_blogger\b/], agentId: 'auto_blogger', agentName: '블로그마케터' },
         ];
         for (const c of candidates) {
             for (const p of c.patterns) {

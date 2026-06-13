@@ -1,0 +1,110 @@
+{
+  "defaultMode": "full",
+  "allowedRoots": [
+    "E:/local_llm_agent",
+    "E:/CLAUDE-CODE"
+  ],
+  "protectedPaths": [
+    "C:/Windows",
+    "C:/Program Files",
+    "C:/Program Files (x86)",
+    "C:/ProgramData"
+  ],
+  "dangerousCommandsRequireApproval": [
+    "Remove-Item",
+    "del ",
+    "rmdir",
+    "rm -rf",
+    "format ",
+    "diskpart",
+    "git push",
+    "npm publish",
+    "docker push",
+    "kubectl delete",
+    "terraform destroy"
+  ],
+  "agents": {
+    "qa": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "npm test",
+        "npm run build",
+        "npm run compile",
+        "pytest",
+        "python"
+      ]
+    },
+    "senior_dev": {
+      "canReadFiles": true,
+      "canEditFiles": true,
+      "canDeleteFiles": false,
+      "canRunCommands": true
+    },
+    "developer": {
+      "canReadFiles": true,
+      "canEditFiles": true,
+      "canDeleteFiles": false,
+      "canRunCommands": true
+    },
+    "stock_analyst": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "python stock_runner.py",
+        "stock_runner.py",
+        "E:/CLAUDE-CODE/주식 분석 자동화/venv/Scripts/python.exe",
+        "E:/CLAUDE-CODE/주식 분석 자동화/start.bat",
+        "E:/CLAUDE-CODE/주식 분석 자동화/setup.bat",
+        "pytest",
+        "python"
+      ]
+    },
+    "market_analyst": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "python market_runner.py",
+        "market_runner.py",
+        "E:/CLAUDE-CODE/시장 분석 자동화/venv/Scripts/python.exe",
+        "E:/CLAUDE-CODE/시장 분석 자동화/start.bat",
+        "E:/CLAUDE-CODE/시장 분석 자동화/setup.bat",
+        "pytest",
+        "python"
+      ]
+    },
+    "voice_summarizer": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "python voice_runner.py",
+        "voice_runner.py",
+        "E:/CLAUDE-CODE/음성녹음 요약/venv/Scripts/python.exe",
+        "E:/CLAUDE-CODE/음성녹음 요약/run.bat",
+        "E:/CLAUDE-CODE/음성녹음 요약/install.bat",
+        "python"
+      ]
+    },
+    "auto_blogger": {
+      "canReadFiles": true,
+      "canEditFiles": false,
+      "canDeleteFiles": false,
+      "canRunCommands": true,
+      "allowedCommands": [
+        "python blog_runner.py",
+        "blog_runner.py",
+        "node",
+        "npm",
+        "E:/CLAUDE-CODE/자동블로그 작성/AutoBlog_Start.bat"
+      ]
+    }
+  }
+}

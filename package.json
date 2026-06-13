@@ -2,7 +2,7 @@
   "name": "yum-agent-company",
   "displayName": "Yum Agent Company",
   "description": "Personal local AI development team with specialist agents. Offline-first VS Code extension.",
-  "version": "2.100.3",
+  "version": "2.101.0",
   "publisher": "connectailab",
   "license": "MIT",
   "icon": "assets/icon.png",
