@@ -15178,6 +15178,7 @@ body.dispatching .beams{opacity:1}
       <button class="side-tab active" data-pane="logPane">📡 활동</button>
       <button class="side-tab" data-pane="outPane">📦 산출물</button>
       <button class="side-tab" data-pane="convPane">📜 대화록</button>
+      <button class="side-tab" data-pane="projPane">📁 프로젝트</button>
     </div>
     <div class="side-pane active" id="logPane">
       <div class="side-empty" id="logEmpty">
@@ -15199,6 +15200,24 @@ body.dispatching .beams{opacity:1}
         <div id="convBody" style="white-space:pre-wrap;word-break:break-word"></div>
         <div style="margin-top:16px;text-align:center">
           <button class="topbtn ghost" id="reloadConvBtn" style="font-size:11px">🔄 새로고침</button>
+        </div>
+      </div>
+    </div>
+    <div class="side-pane" id="projPane" style="padding:15px; font-family:inherit; overflow-y:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <h4 style="margin:0; font-size:13px; color:var(--accent); text-shadow:0 0 6px var(--accent-glow);">📁 워크스페이스 관리</h4>
+        <button class="topbtn primary" id="addProjBtn" style="font-size:10px; padding:3px 8px;">+ 추가</button>
+      </div>
+      <div id="projList" style="display:flex; flex-direction:column; gap:10px; margin-bottom:15px;">
+        <!-- Dynamically filled -->
+      </div>
+      <div id="projForm" style="display:none; background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:6px; padding:12px; margin-top:10px;">
+        <div style="font-size:11px; font-weight:600; color:var(--text-bright); margin-bottom:8px;">새 프로젝트 등록</div>
+        <input type="text" id="newProjPath" placeholder="절대 경로 (예: E:/my-project)" style="width:100%; background:#000; border:1px solid var(--border); border-radius:4px; padding:6px; color:#fff; font-size:11px; margin-bottom:8px;" />
+        <textarea id="newProjDesc" placeholder="설명 (옵션)" style="width:100%; background:#000; border:1px solid var(--border); border-radius:4px; padding:6px; color:#fff; font-size:11px; margin-bottom:8px; resize:vertical; height:45px;"></textarea>
+        <div style="display:flex; gap:6px; justify-content:flex-end;">
+          <button class="topbtn ghost" id="cancelProjBtn" style="font-size:10px; padding:3px 8px;">취소</button>
+          <button class="topbtn primary" id="saveNewProjBtn" style="font-size:10px; padding:3px 8px;">등록</button>
         </div>
       </div>
     </div>
@@ -16355,6 +16374,9 @@ document.querySelectorAll('.side-tab').forEach(t => {
     if (t.dataset.pane === 'convPane') {
       vscode.postMessage({ type: 'loadConversations' });
     }
+    if (t.dataset.pane === 'projPane') {
+      vscode.postMessage({ type: 'loadProjects' });
+    }
   });
 });
 document.getElementById('reloadConvBtn')?.addEventListener('click', () => {
@@ -16795,6 +16817,14 @@ window.addEventListener('message', e => {
       if (pane) pane.scrollTop = pane.scrollHeight;
       break;
     }
+    case 'projectsLoaded': {
+      try {
+        renderProjects(m.data || {});
+      } catch (e) {
+        console.error('[Connect AI] projectsLoaded render error:', e);
+      }
+      break;
+    }
     case 'brainRead': {
       pulseBrain(m.agent, m.reason || '');
       break;
@@ -16846,6 +16876,185 @@ window.addEventListener('message', e => {
     }
   }
 });
+
+/* ============================================================
+   v2.101.3 — Workspace Project Manager Webview Setup
+============================================================ */
+function renderProjects(data) {
+  const list = document.getElementById('projList');
+  if (!list) return;
+  list.innerHTML = '';
+  
+  const activeId = data.activeProjectId;
+  const projects = data.projects || [];
+  
+  if (projects.length === 0) {
+    list.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 10px;text-align:center;color:var(--text-dim);">' +
+        '<div style="font-size:24px;margin-bottom:8px;">📁</div>' +
+        '<div style="font-size:11px;font-weight:600;color:var(--text);">등록된 프로젝트가 없습니다</div>' +
+        '<div style="font-size:10px;margin-top:4px;">우상단 [+ 추가] 버튼으로 프로젝트 경로를 등록해보세요.</div>' +
+      '</div>';
+    return;
+  }
+  
+  projects.forEach(p => {
+    const isActive = p.id === activeId;
+    const card = document.createElement('div');
+    card.style.background = isActive ? 'rgba(0, 255, 65, 0.05)' : 'rgba(255,255,255,0.02)';
+    card.style.border = isActive ? '1px solid var(--accent)' : '1px solid var(--border)';
+    card.style.borderRadius = '6px';
+    card.style.padding = '10px';
+    card.style.position = 'relative';
+    card.style.transition = 'all 0.2s';
+    card.style.boxShadow = isActive ? '0 0 10px rgba(0,255,65,0.1)' : 'none';
+    
+    const head = document.createElement('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.alignItems = 'center';
+    head.style.marginBottom = '6px';
+    
+    const nameEl = document.createElement('span');
+    nameEl.style.fontWeight = '700';
+    nameEl.style.fontSize = '12px';
+    nameEl.style.color = isActive ? 'var(--accent)' : 'var(--text-bright)';
+    nameEl.textContent = p.name + (isActive ? ' 🌟' : '');
+    
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '4px';
+    
+    if (!isActive) {
+      const selBtn = document.createElement('button');
+      selBtn.className = 'topbtn primary';
+      selBtn.style.fontSize = '9px';
+      selBtn.style.padding = '2px 6px';
+      selBtn.textContent = '선택';
+      selBtn.onclick = (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'selectProject', projectId: p.id });
+        setTimeout(() => vscode.postMessage({ type: 'loadProjects' }), 100);
+      };
+      actions.appendChild(selBtn);
+    }
+    
+    const editBtn = document.createElement('button');
+    editBtn.className = 'topbtn ghost';
+    editBtn.style.fontSize = '9px';
+    editBtn.style.padding = '2px 6px';
+    editBtn.textContent = '편집';
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      const desc = prompt('프로젝트 설명을 입력하세요:', p.description);
+      const prog = prompt('진행률(0-100)을 입력하세요:', p.progress);
+      if (desc !== null || prog !== null) {
+        vscode.postMessage({ 
+          type: 'saveProject', 
+          projectId: p.id, 
+          description: desc !== null ? desc : p.description, 
+          progress: prog !== null ? Number(prog) : p.progress 
+        });
+        setTimeout(() => vscode.postMessage({ type: 'loadProjects' }), 100);
+      }
+    };
+    actions.appendChild(editBtn);
+    
+    const delBtn = document.createElement('button');
+    delBtn.className = 'topbtn ghost';
+    delBtn.style.fontSize = '9px';
+    delBtn.style.padding = '2px 6px';
+    delBtn.style.color = '#ff4a4a';
+    delBtn.textContent = '삭제';
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (confirm('\'' + p.name + '\' 프로젝트를 목록에서 삭제하시겠습니까?\n(실제 디스크 파일은 삭제되지 않습니다)')) {
+        vscode.postMessage({ type: 'deleteProject', projectId: p.id });
+        setTimeout(() => vscode.postMessage({ type: 'loadProjects' }), 100);
+      }
+    };
+    actions.appendChild(delBtn);
+    
+    head.appendChild(nameEl);
+    head.appendChild(actions);
+    card.appendChild(head);
+    
+    const pathEl = document.createElement('div');
+    pathEl.style.fontSize = '9.5px';
+    pathEl.style.color = 'var(--text-dim)';
+    pathEl.style.wordBreak = 'break-all';
+    pathEl.style.marginBottom = '6px';
+    pathEl.textContent = p.path;
+    card.appendChild(pathEl);
+    
+    if (p.description) {
+      const descEl = document.createElement('div');
+      descEl.style.fontSize = '10px';
+      descEl.style.color = 'var(--text)';
+      descEl.style.marginBottom = '8px';
+      descEl.style.fontStyle = 'italic';
+      descEl.textContent = p.description;
+      card.appendChild(descEl);
+    }
+    
+    const footer = document.createElement('div');
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'space-between';
+    footer.style.alignItems = 'center';
+    footer.style.fontSize = '9px';
+    footer.style.color = 'var(--text-dim)';
+    
+    const workEl = document.createElement('span');
+    workEl.textContent = '최근: ' + (p.lastWork || '없음');
+    
+    const progEl = document.createElement('span');
+    progEl.style.fontWeight = 'bold';
+    progEl.style.color = isActive ? 'var(--accent)' : 'var(--text)';
+    progEl.textContent = '진행도: ' + (p.progress || 0) + '%';
+    
+    footer.appendChild(workEl);
+    footer.appendChild(progEl);
+    card.appendChild(footer);
+    
+    list.appendChild(card);
+  });
+}
+
+(function setupWorkspaceManager() {
+  const addProjBtn = document.getElementById('addProjBtn');
+  const projForm = document.getElementById('projForm');
+  const cancelProjBtn = document.getElementById('cancelProjBtn');
+  const saveNewProjBtn = document.getElementById('saveNewProjBtn');
+  const newProjPath = document.getElementById('newProjPath');
+  const newProjDesc = document.getElementById('newProjDesc');
+  
+  if (addProjBtn && projForm) {
+    addProjBtn.addEventListener('click', () => {
+      projForm.style.display = 'block';
+    });
+  }
+  if (cancelProjBtn && projForm) {
+    cancelProjBtn.addEventListener('click', () => {
+      projForm.style.display = 'none';
+      if (newProjPath) newProjPath.value = '';
+      if (newProjDesc) newProjDesc.value = '';
+    });
+  }
+  if (saveNewProjBtn && projForm) {
+    saveNewProjBtn.addEventListener('click', () => {
+      const pPath = newProjPath ? newProjPath.value.trim() : '';
+      const pDesc = newProjDesc ? newProjDesc.value.trim() : '';
+      if (!pPath) {
+        alert('프로젝트 경로를 입력해주세요.');
+        return;
+      }
+      vscode.postMessage({ type: 'addProject', path: pPath, description: pDesc });
+      projForm.style.display = 'none';
+      if (newProjPath) newProjPath.value = '';
+      if (newProjDesc) newProjDesc.value = '';
+      setTimeout(() => vscode.postMessage({ type: 'loadProjects' }), 100);
+    });
+  }
+})();
 
 /* ============================================================
    v2.89.143 — Floating Revenue Command Center (사무실 우상단 HUD)
